@@ -1,0 +1,21 @@
+2026/11/08 10:45:15 にビルドを開始しました。
+ノード 1 上のプロジェクト "V:\DelphiProg\SYNC_Mine\SYNC_MINE.dproj" (Build ターゲット)。
+BuildVersionResource:
+  C:\Program Files (x86)\Embarcadero\Studio\37.0\bin64\cgrc.exe -c65001 -= resinator.exe SYNC_MINE.vrc -foSYNC_MINE.res 
+  CodeGear Resource Compiler/Binder
+  Version 1.2.3 Copyright (c) 2008-2025 Embarcadero Technologies Inc.
+  
+  ファイル "SYNC_MINE.vrc" を削除しています。
+  del "SYNC_MINE.vrc"
+_PasCoreCompile:
+  C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\dcc64.exe -$D0 -$L- -$Y- --no-config -B -Q -TX.dll -AGenerics.Collections=System.Generics.Collections;Generics.Defaults=System.Generics.Defaults;WinTypes=Winapi.Windows;WinProcs=Winapi.Windows;DbiTypes=BDE;DbiProcs=BDE;DbiErrs=BDE -DRELEASE -E.\Win64\Release -I"c:\program files (x86)\embarcadero\studio\37.0\lib\Win64\release\JA";"c:\program files (x86)\embarcadero\studio\37.0\lib\Win64\release";C:\Users\zan12\Documents\Embarcadero\Studio\37.0\Imports\Win64;"C:\Program Files (x86)\Embarcadero\Studio\37.0\Imports";C:\Users\Public\Documents\Embarcadero\Studio\37.0\Dcp\Win64;"C:\Program Files (x86)\Embarcadero\Studio\37.0\include" -LEC:\Users\Public\Documents\Embarcadero\Studio\37.0\Bpl\Win64 -LNC:\Users\Public\Documents\Embarcadero\Studio\37.0\Dcp\Win64 -NU.\Win64\Release\DCU -NSSystem;Xml;Data;Datasnap;Web;Soap;Winapi;Vcl; -O"c:\program files (x86)\embarcadero\studio\37.0\lib\Win64\release";C:\Users\zan12\Documents\Embarcadero\Studio\37.0\Imports\Win64;"C:\Program Files (x86)\Embarcadero\Studio\37.0\Imports";C:\Users\Public\Documents\Embarcadero\Studio\37.0\Dcp\Win64;"C:\Program Files (x86)\Embarcadero\Studio\37.0\include" -R"c:\program files (x86)\embarcadero\studio\37.0\lib\Win64\release\JA";"c:\program files (x86)\embarcadero\studio\37.0\lib\Win64\release";C:\Users\zan12\Documents\Embarcadero\Studio\37.0\Imports\Win64;"C:\Program Files (x86)\Embarcadero\Studio\37.0\Imports";C:\Users\Public\Documents\Embarcadero\Studio\37.0\Dcp\Win64;"C:\Program Files (x86)\Embarcadero\Studio\37.0\include" -U"c:\program files (x86)\embarcadero\studio\37.0\lib\Win64\release\JA";"c:\program files (x86)\embarcadero\studio\37.0\lib\Win64\release";C:\Users\zan12\Documents\Embarcadero\Studio\37.0\Imports\Win64;"C:\Program Files (x86)\Embarcadero\Studio\37.0\Imports";C:\Users\Public\Documents\Embarcadero\Studio\37.0\Dcp\Win64;"C:\Program Files (x86)\Embarcadero\Studio\37.0\include" -NBC:\Users\Public\Documents\Embarcadero\Studio\37.0\Dcp\Win64 -NHC:\Users\Public\Documents\Embarcadero\Studio\37.0\hpp\Win64 -NO.\Win64\Release\DCU  SYNC_MINE.dpr   
+  Embarcadero Delphi for Win64 compiler version 37.0
+  Copyright (c) 1983,2026 Embarcadero Technologies, Inc.
+  7327 行、0.44 秒、3999164 バイト コード、415660 バイト データ。
+プロジェクト "V:\DelphiProg\SYNC_Mine\SYNC_MINE.dproj" (Build ターゲット) のビルドが完了しました。
+
+ビルドに成功しました。
+    0 個の警告
+    0 エラー
+
+経過時間 00:00:00.88

@@ -1,0 +1,1116 @@
+﻿unit SYNC_MINE_SettingsForm;
+
+// 会話とアイコンを別ページで編集し、ローカルの変更をOK時だけ返す。
+
+interface
+
+function EditMineSettings(var JSON: string; Orientation: Integer; PhoneColor: Cardinal): Boolean;
+procedure CheckMineDPI(DPI: Integer; const OutputFolder: string);
+
+implementation
+
+uses
+  System.Classes, System.IOUtils, System.Math, System.SysUtils, System.Types, System.UITypes,
+  Winapi.GDIPAPI, Winapi.GDIPOBJ, Winapi.Windows, Winapi.UxTheme, Vcl.ComCtrls, Vcl.Controls, Vcl.Dialogs,
+  Vcl.ExtCtrls, Vcl.Forms, Vcl.Graphics, Vcl.StdCtrls, Vcl.Imaging.pngimage,
+  SYNC_MusicStudio_DarkTheme, SYNC_MINE_Conversation, SYNC_MINE_CharacterIcons,
+  SYNC_MINE_Renderer, SYNC_MINE_UserSettings;
+
+type
+  TFormMineSettings = class(TForm)
+  private
+    FData: TMineConversation;
+    FHistory: TMineCharacterHistory;
+    FBuiltinNames: TStringList;
+    FRenderer: TMineRenderer;
+    FPhoneColor: Cardinal;
+    FLoading, FDirty, FNameNeedsApply: Boolean;
+    FLayoutReady, FUpdatingLayout: Boolean;
+    FPreviewPanel, FPreviewFooter: TPanel;
+    FMessageScroll, FIconScroll: TScrollBox;
+    FMessageList, FSpeakerList: TListBox;
+    FTitle, FTime, FPhoto, FIconFile: TEdit;
+    FText: TMemo;
+    FSender, FSide, FName, FOrientation: TComboBox;
+    FScale, FIconX, FIconY, FStage: TTrackBar;
+    FPreview, FIconPreview: TPaintBox;
+    FStageLabel, FTransformLabel, FStatus, FMessageHint: TLabel;
+    FTimer: TTimer;
+    FIconImage: TGPBitmap;
+    FIconImageFile: string;
+    function LabelAt(Parent: TWinControl; const Caption: string; X, Y: Integer): TLabel;
+    function ButtonAt(Parent: TWinControl; const Caption: string; X, Y, W: Integer;
+      Click: TNotifyEvent): TButton;
+    function EditAt(Parent: TWinControl; X, Y, W: Integer): TEdit;
+    function ComboAt(Parent: TWinControl; X, Y, W: Integer): TComboBox;
+    function SliderAt(Parent: TWinControl; X, Y, W, Low, High, Value: Integer): TTrackBar;
+    procedure DrawCombo(Control: TWinControl; Index: Integer; Bounds: TRect; State: TOwnerDrawState);
+    procedure DrawMessage(Control: TWinControl; Index: Integer; Bounds: TRect; State: TOwnerDrawState);
+    function SpeakerCaption(Index: Integer): string;
+    procedure UpdateMessageHint;
+    procedure BuildMessagePage(Parent: TWinControl);
+    procedure BuildIconPage(Parent: TWinControl);
+    procedure RefreshLists(MessageIndex, SpeakerIndex: Integer);
+    function MessageCaption(Index: Integer): string;
+    procedure LoadMessage(Sender: TObject);
+    procedure LoadSpeaker(Sender: TObject);
+    procedure MessageChanged(Sender: TObject);
+    procedure SpeakerChanged(Sender: TObject);
+    procedure AddMessage(Sender: TObject);
+    procedure DeleteMessage(Sender: TObject);
+    procedure MoveMessage(Sender: TObject);
+    procedure AddSpeaker(Sender: TObject);
+    procedure DeleteSpeaker(Sender: TObject);
+    procedure ChoosePhoto(Sender: TObject);
+    procedure ClearPhoto(Sender: TObject);
+    procedure ChooseIcon(Sender: TObject);
+    procedure ClearIcon(Sender: TObject);
+    procedure UseCharacter(Sender: TObject);
+    procedure CharacterNameExit(Sender: TObject);
+    procedure CharacterNamesDropDown(Sender: TObject);
+    procedure RememberCharacter;
+    procedure RefreshCharacterNames;
+    function ChooseImage(out FileName: string): Boolean;
+    procedure RefreshIcon;
+    procedure PaintIcon(Sender: TObject);
+    procedure PaintPreview(Sender: TObject);
+    procedure PreviewChanged(Sender: TObject);
+    procedure Tick(Sender: TObject);
+    procedure Accept(Sender: TObject);
+    procedure FitToWorkArea;
+  protected
+    procedure DoShow; override;
+    procedure DoAfterMonitorDpiChanged(OldDPI, NewDPI: Integer); override;
+    procedure Resize; override;
+  public
+    constructor CreateForConversation(const JSON: string; Orientation: Integer; PhoneColor: Cardinal);
+    destructor Destroy; override;
+  end;
+
+function TFormMineSettings.LabelAt(Parent: TWinControl; const Caption: string; X, Y: Integer): TLabel;
+begin
+  Result := TLabel.Create(Self);
+  Result.Parent := Parent;
+  Result.Caption := Caption;
+  Result.Left := X;
+  Result.Top := Y;
+  Result.Font.Color := SYNC_MUSIC_STUDIO_DARK_TEXT_COLOR;
+end;
+
+function TFormMineSettings.ButtonAt(Parent: TWinControl; const Caption: string;
+  X, Y, W: Integer; Click: TNotifyEvent): TButton;
+begin
+  Result := TButton.Create(Self);
+  Result.Parent := Parent;
+  Result.SetBounds(X, Y, W, 30);
+  Result.Caption := Caption;
+  Result.OnClick := Click;
+  ApplySyncMusicStudioDarkButton(Result);
+end;
+
+function TFormMineSettings.EditAt(Parent: TWinControl; X, Y, W: Integer): TEdit;
+begin
+  Result := TEdit.Create(Self);
+  Result.Parent := Parent;
+  Result.SetBounds(X, Y, W, 28);
+  ApplySyncMusicStudioDarkEdit(Result);
+end;
+
+function TFormMineSettings.ComboAt(Parent: TWinControl; X, Y, W: Integer): TComboBox;
+begin
+  Result := TComboBox.Create(Self);
+  Result.Parent := Parent;
+  Result.SetBounds(X, Y, W, 28);
+  Result.Style := csDropDownList;
+  ApplySyncMusicStudioDarkComboBox(Result, DrawCombo);
+end;
+
+function TFormMineSettings.SliderAt(Parent: TWinControl; X, Y, W, Low, High, Value: Integer): TTrackBar;
+begin
+  Result := TTrackBar.Create(Self);
+  Result.Parent := Parent;
+  Result.SetBounds(X, Y, W, 32);
+  Result.Min := Low;
+  Result.Max := High;
+  Result.Position := Value;
+  Result.TickStyle := tsNone;
+  Result.PageSize := 10;
+end;
+
+procedure TFormMineSettings.DrawCombo(Control: TWinControl; Index: Integer; Bounds: TRect;
+  State: TOwnerDrawState);
+begin
+  DrawSyncMusicStudioDarkComboBoxItem(TComboBox(Control), Index, Bounds, State, PixelsPerInch);
+end;
+
+function TFormMineSettings.SpeakerCaption(Index: Integer): string;
+begin
+  if FData.Speakers[Index].Outgoing then Result := '自分｜' else Result := '相手｜';
+  Result := Result + FData.Speakers[Index].Name;
+end;
+
+procedure TFormMineSettings.DrawMessage(Control: TWinControl; Index: Integer;
+  Bounds: TRect; State: TOwnerDrawState);
+var
+  Canvas: TCanvas;
+  TextBounds: TRect;
+begin
+  Canvas := TListBox(Control).Canvas;
+  if odSelected in State then Canvas.Brush.Color := $0050473B
+  else Canvas.Brush.Color := SYNC_MUSIC_STUDIO_DARK_CONTROL_COLOR;
+  Canvas.FillRect(Bounds);
+  if (Index < 0) or (Index >= Length(FData.Messages)) then Exit;
+  Canvas.Font.Assign(Font);
+  if FData.Speakers[FData.Messages[Index].Speaker].Outgoing then Canvas.Font.Color := $00A1E8AC
+  else Canvas.Font.Color := $00E8DFD6;
+  TextBounds := Bounds;
+  InflateRect(TextBounds, -ScaleValue(6), 0);
+  SelectObject(Canvas.Handle, Canvas.Font.Handle);
+  SetTextColor(Canvas.Handle, ColorToRGB(Canvas.Font.Color));
+  SetBkMode(Canvas.Handle, TRANSPARENT);
+  DrawText(Canvas.Handle, PChar(MessageCaption(Index)), -1, TextBounds,
+    DT_SINGLELINE or DT_VCENTER or DT_NOPREFIX or DT_END_ELLIPSIS);
+end;
+
+procedure TFormMineSettings.UpdateMessageHint;
+var
+  I, Start: Integer;
+begin
+  I := FMessageList.ItemIndex;
+  if I < 0 then
+  begin
+    FMessageHint.Caption := '段階0は会話なし。「追加」からメッセージを作成してください。';
+    Exit;
+  end;
+  Start := I * 100;
+  if FData.Speakers[FData.Messages[I].Speaker].Outgoing then
+    FMessageHint.Caption := Format('自分：%d〜%dで入力、%d〜%dで送信、%dで既読。',
+      [Start, Start + 85, Start + 86, Start + 99, Start + 100])
+  else FMessageHint.Caption := Format('相手：%d〜%dで吹き出し・写真が出現、%dで既読。',
+      [Start, Start + 99, Start + 100]);
+end;
+
+constructor TFormMineSettings.CreateForConversation(const JSON: string; Orientation: Integer;
+  PhoneColor: Cardinal);
+var
+  Footer, PreviewPanel, PreviewFooter, EditorPanel: TPanel;
+  Pages: TPageControl;
+  Page: TTabSheet;
+  Scroll: TScrollBox;
+  Button: TButton;
+begin
+  inherited CreateNew(nil);
+  FData := TMineConversation.FromJSON(JSON);
+  FHistory := TMineCharacterHistory.Create;
+  FHistory.Load;
+  FBuiltinNames := TStringList.Create;
+  MineCharacterNames(FBuiltinNames);
+  FRenderer := TMineRenderer.Create;
+  FPhoneColor := PhoneColor;
+  FLoading := True;
+  Caption := 'MINE の設定';
+  Position := poScreenCenter;
+  ClientWidth := 1040;
+  ClientHeight := 740;
+  // 手動配置とフォントを同じ96 DPIで作り、完成後に一度だけ拡大する。
+  Font.PixelsPerInch := USER_DEFAULT_SCREEN_DPI;
+  Font.IsDPIRelated := True;
+  Font.Name := 'Yu Gothic UI';
+  Font.Size := 10;
+  DoubleBuffered := True;
+  ApplySyncMusicStudioDarkForm(Self);
+
+  Footer := TPanel.Create(Self);
+  Footer.Parent := Self;
+  Footer.Align := alBottom;
+  Footer.Height := 54;
+  Footer.BevelOuter := bvNone;
+  ApplySyncMusicStudioDarkPanel(Footer);
+  Button := ButtonAt(Footer, 'OK', ClientWidth - 200, 12, 90, Accept);
+  Button.Anchors := [akTop, akRight];
+  // Enter は本文の改行に使うため、OKを既定ボタンにしない。
+  Button := ButtonAt(Footer, 'キャンセル', ClientWidth - 102, 12, 90, nil);
+  Button.Anchors := [akTop, akRight];
+  Button.Cancel := True;
+  Button.ModalResult := mrCancel;
+
+  PreviewPanel := TPanel.Create(Self);
+  FPreviewPanel := PreviewPanel;
+  PreviewPanel.Parent := Self;
+  PreviewPanel.Align := alRight;
+  PreviewPanel.Width := 380;
+  PreviewPanel.BevelOuter := bvNone;
+  PreviewPanel.Padding.SetBounds(12, 12, 12, 12);
+  ApplySyncMusicStudioDarkPanel(PreviewPanel);
+  PreviewFooter := TPanel.Create(Self);
+  FPreviewFooter := PreviewFooter;
+  PreviewFooter.Parent := PreviewPanel;
+  PreviewFooter.Align := alBottom;
+  PreviewFooter.Height := 125;
+  PreviewFooter.BevelOuter := bvNone;
+  ApplySyncMusicStudioDarkPanel(PreviewFooter);
+  FStageLabel := LabelAt(PreviewFooter, '段階 0', 0, 4);
+  FStage := SliderAt(PreviewFooter, 0, 28, 352, 0, Max(100, Length(FData.Messages) * 100), 0);
+  FStage.Frequency := 100;
+  FStage.PageSize := 100;
+  FStage.OnChange := PreviewChanged;
+  FOrientation := ComboAt(PreviewFooter, 0, 66, 120);
+  FOrientation.Items.Add('縦向き');
+  FOrientation.Items.Add('横向き');
+  FOrientation.ItemIndex := Orientation;
+  FOrientation.OnChange := PreviewChanged;
+  FStatus := LabelAt(PreviewFooter, '', 0, 103);
+  FStatus.AutoSize := False;
+  FStatus.Width := 352;
+  FPreview := TPaintBox.Create(Self);
+  FPreview.Parent := PreviewPanel;
+  FPreview.Align := alClient;
+  FPreview.OnPaint := PaintPreview;
+
+  EditorPanel := TPanel.Create(Self);
+  EditorPanel.Parent := Self;
+  EditorPanel.Align := alClient;
+  EditorPanel.BevelOuter := bvNone;
+  EditorPanel.Padding.SetBounds(12, 12, 0, 12);
+  ApplySyncMusicStudioDarkPanel(EditorPanel);
+  Pages := TPageControl.Create(Self);
+  Pages.Parent := EditorPanel;
+  Pages.Align := alClient;
+  Page := TTabSheet.Create(Self);
+  Page.PageControl := Pages;
+  Page.Caption := 'メッセージ';
+  Scroll := TScrollBox.Create(Self);
+  FMessageScroll := Scroll;
+  Scroll.Parent := Page;
+  Scroll.Align := alClient;
+  Scroll.BorderStyle := bsNone;
+  Scroll.Color := SYNC_MUSIC_STUDIO_DARK_PANEL_COLOR;
+  BuildMessagePage(Scroll);
+  Page := TTabSheet.Create(Self);
+  Page.PageControl := Pages;
+  Page.Caption := 'アイコン';
+  Scroll := TScrollBox.Create(Self);
+  FIconScroll := Scroll;
+  Scroll.Parent := Page;
+  Scroll.Align := alClient;
+  Scroll.BorderStyle := bsNone;
+  Scroll.Color := SYNC_MUSIC_STUDIO_DARK_PANEL_COLOR;
+  BuildIconPage(Scroll);
+  Pages.ActivePageIndex := 0;
+  FLoading := False;
+  RefreshLists(0, 0);
+  FDirty := True;
+  FTimer := TTimer.Create(Self);
+  FTimer.Interval := 120;
+  FTimer.OnTimer := Tick;
+  DisableAlign;
+  try
+    ScaleForPPI(CurrentPPI);
+    ClientWidth := ScaleValue(1040);
+    ClientHeight := ScaleValue(740);
+  finally
+    EnableAlign;
+  end;
+  FLayoutReady := True;
+  Resize;
+end;
+
+var DpiSnapshotFullSize: Boolean;
+
+procedure TFormMineSettings.FitToWorkArea;
+var
+  Area: TRect;
+  FitWidth, FitHeight: Integer;
+begin
+  if DpiSnapshotFullSize then Exit;
+  Area := Monitor.WorkareaRect;
+  Constraints.MinWidth := Min(ScaleValue(980), Area.Width);
+  Constraints.MinHeight := Min(ScaleValue(700), Area.Height);
+  if WindowState <> wsNormal then Exit;
+  FitWidth := Min(Width, Area.Width);
+  FitHeight := Min(Height, Area.Height);
+  SetBounds(EnsureRange(Left, Area.Left, Area.Right - FitWidth),
+    EnsureRange(Top, Area.Top, Area.Bottom - FitHeight), FitWidth, FitHeight);
+end;
+
+procedure TFormMineSettings.DoShow;
+begin
+  FitToWorkArea;
+  inherited;
+end;
+
+procedure TFormMineSettings.DoAfterMonitorDpiChanged(OldDPI, NewDPI: Integer);
+begin
+  inherited;
+  FitToWorkArea;
+  Resize;
+end;
+
+procedure TFormMineSettings.Resize;
+begin
+  inherited;
+  if not FLayoutReady or FUpdatingLayout or (csDestroying in ComponentState) then Exit;
+  FUpdatingLayout := True;
+  try
+    // 編集側の幅を優先し、狭い作業領域ではプレビューを縮める。
+    FPreviewPanel.Width := Min(ScaleValue(380), Max(ScaleValue(220),
+      ClientWidth - ScaleValue(640)));
+    FStage.Width := FPreviewFooter.ClientWidth;
+    FStatus.Width := FPreviewFooter.ClientWidth;
+    FMessageScroll.HorzScrollBar.Margin := ScaleValue(12);
+    FMessageScroll.VertScrollBar.Margin := ScaleValue(12);
+    FIconScroll.HorzScrollBar.Margin := ScaleValue(12);
+    FIconScroll.VertScrollBar.Margin := ScaleValue(12);
+    FPreview.Invalidate;
+    FIconPreview.Invalidate;
+  finally
+    FUpdatingLayout := False;
+  end;
+end;
+
+destructor TFormMineSettings.Destroy;
+begin
+  if FTimer <> nil then FTimer.Enabled := False;
+  FIconImage.Free;
+  FRenderer.Free;
+  FBuiltinNames.Free;
+  FHistory.Free;
+  inherited;
+end;
+
+procedure TFormMineSettings.BuildMessagePage(Parent: TWinControl);
+begin
+  LabelAt(Parent, 'トーク名', 12, 14);
+  FTitle := EditAt(Parent, 88, 10, 510);
+  FTitle.MaxLength := 128;
+  FTitle.Text := FData.Title;
+  FTitle.OnChange := MessageChanged;
+  FMessageList := TListBox.Create(Self);
+  FMessageList.Parent := Parent;
+  FMessageList.SetBounds(12, 48, 586, 210);
+  FMessageList.Style := lbOwnerDrawFixed;
+  FMessageList.ItemHeight := 28;
+  FMessageList.OnDrawItem := DrawMessage;
+  FMessageList.OnClick := LoadMessage;
+  ApplySyncMusicStudioDarkListBox(FMessageList);
+  ButtonAt(Parent, '追加', 12, 268, 90, AddMessage);
+  ButtonAt(Parent, '削除', 110, 268, 90, DeleteMessage);
+  ButtonAt(Parent, '上へ', 208, 268, 90, MoveMessage).Tag := -1;
+  ButtonAt(Parent, '下へ', 306, 268, 90, MoveMessage).Tag := 1;
+  LabelAt(Parent, '発言者', 12, 314);
+  FSender := ComboAt(Parent, 80, 310, 270);
+  FSender.OnChange := MessageChanged;
+  LabelAt(Parent, '時刻', 368, 314);
+  FTime := EditAt(Parent, 418, 310, 180);
+  FTime.MaxLength := 32;
+  FTime.OnChange := MessageChanged;
+  LabelAt(Parent, '写真', 12, 354);
+  FPhoto := EditAt(Parent, 80, 350, 318);
+  FPhoto.ReadOnly := True;
+  ButtonAt(Parent, '参照', 408, 348, 90, ChoosePhoto);
+  ButtonAt(Parent, '解除', 508, 348, 90, ClearPhoto);
+  LabelAt(Parent, '本文（写真と併用できます）', 12, 396);
+  FText := TMemo.Create(Self);
+  FText.Parent := Parent;
+  FText.SetBounds(12, 422, 586, 160);
+  FText.MaxLength := 4096;
+  FText.ScrollBars := ssVertical;
+  FText.WantReturns := True;
+  FText.OnChange := MessageChanged;
+  ApplySyncMusicStudioDarkMemo(FText);
+  FMessageHint := LabelAt(Parent, '', 12, 595);
+  FMessageHint.AutoSize := False;
+  FMessageHint.SetBounds(12, 595, 586, 50);
+  FMessageHint.WordWrap := True;
+end;
+
+procedure TFormMineSettings.BuildIconPage(Parent: TWinControl);
+var
+  Hint: TLabel;
+begin
+  FSpeakerList := TListBox.Create(Self);
+  FSpeakerList.Parent := Parent;
+  FSpeakerList.SetBounds(12, 12, 164, 490);
+  FSpeakerList.OnClick := LoadSpeaker;
+  ApplySyncMusicStudioDarkListBox(FSpeakerList);
+  ButtonAt(Parent, '追加', 12, 514, 78, AddSpeaker);
+  ButtonAt(Parent, '削除', 98, 514, 78, DeleteSpeaker);
+  LabelAt(Parent, 'キャラ名', 196, 16);
+  FName := ComboAt(Parent, 276, 12, 322);
+  // 編集できるコンボに戻す。共通の暗色化処理は所有者描画の選択専用にするため。
+  FName.Style := csDropDown;
+  SetWindowTheme(FName.Handle, 'DarkMode_CFD', nil);
+  FName.AutoComplete := False;
+  FName.DropDownCount := 14;
+  FName.MaxLength := 64;
+  RefreshCharacterNames;
+  FName.OnChange := SpeakerChanged;
+  FName.OnSelect := UseCharacter;
+  FName.OnExit := CharacterNameExit;
+  FName.OnDropDown := CharacterNamesDropDown;
+  LabelAt(Parent, '自分／相手', 196, 58);
+  FSide := ComboAt(Parent, 276, 54, 322);
+  FSide.Items.Add('相手側（左）');
+  FSide.Items.Add('自分側（右）');
+  FSide.OnChange := SpeakerChanged;
+  LabelAt(Parent, '画像ファイル', 196, 104);
+  FIconFile := EditAt(Parent, 196, 130, 402);
+  FIconFile.ReadOnly := True;
+  ButtonAt(Parent, '参照', 196, 168, 90, ChooseIcon);
+  ButtonAt(Parent, '解除', 296, 168, 90, ClearIcon);
+  Hint := LabelAt(Parent, 'キャラ名は直接入力できます。' + sLineBreak +
+    '候補の先頭には最近使った名前が並びます。' + sLineBreak +
+    '選ぶとアイコンと倍率・位置補正も呼び出します。', 196, 214);
+  Hint.AutoSize := False;
+  Hint.SetBounds(196, 214, 402, 70);
+  Hint.WordWrap := True;
+  LabelAt(Parent, 'アイコン枠', 196, 294);
+  FIconPreview := TPaintBox.Create(Self);
+  FIconPreview.Parent := Parent;
+  FIconPreview.SetBounds(196, 324, 160, 160);
+  FIconPreview.OnPaint := PaintIcon;
+  LabelAt(Parent, '拡大率', 376, 296);
+  FScale := SliderAt(Parent, 370, 320, 228, 10, 1000, 100);
+  FScale.OnChange := SpeakerChanged;
+  LabelAt(Parent, 'X 補正', 376, 360);
+  FIconX := SliderAt(Parent, 370, 384, 228, -200, 200, 0);
+  FIconX.OnChange := SpeakerChanged;
+  LabelAt(Parent, 'Y 補正', 376, 424);
+  FIconY := SliderAt(Parent, 370, 448, 228, -200, 200, 0);
+  FIconY.OnChange := SpeakerChanged;
+  FTransformLabel := LabelAt(Parent, '', 196, 506);
+  Hint := LabelAt(Parent, 'X・Yはアイコン枠の幅・高さに対する割合（%）です。' + sLineBreak +
+    '自分側の発言は右寄せになり、アイコンを表示しません。', 196, 542);
+  Hint.AutoSize := False;
+  Hint.SetBounds(196, 542, 402, 76);
+  Hint.WordWrap := True;
+end;
+
+function TFormMineSettings.MessageCaption(Index: Integer): string;
+var
+  Summary: string;
+begin
+  Summary := FData.Messages[Index].Text.Replace(#13, ' ').Replace(#10, ' ');
+  if FData.Messages[Index].PhotoFile <> '' then Summary := '[写真] ' + Summary;
+  Result := Format('%d〜%d → %d既読  %s  %s', [Index * 100, Index * 100 + 99,
+    (Index + 1) * 100, SpeakerCaption(FData.Messages[Index].Speaker), Copy(Summary, 1, 72)]);
+end;
+
+procedure TFormMineSettings.RefreshLists(MessageIndex, SpeakerIndex: Integer);
+var
+  I: Integer;
+begin
+  FLoading := True;
+  try
+    FMessageList.Items.BeginUpdate;
+    FSpeakerList.Items.BeginUpdate;
+    try
+      FMessageList.Clear;
+      for I := 0 to High(FData.Messages) do FMessageList.Items.Add(MessageCaption(I));
+      FSpeakerList.Clear;
+      FSender.Clear;
+      for I := 0 to High(FData.Speakers) do
+      begin
+        FSpeakerList.Items.Add(SpeakerCaption(I));
+        FSender.Items.Add(SpeakerCaption(I));
+      end;
+      FMessageList.ItemIndex := Min(MessageIndex, High(FData.Messages));
+      FSpeakerList.ItemIndex := EnsureRange(SpeakerIndex, 0, High(FData.Speakers));
+      FStage.Max := Max(100, Length(FData.Messages) * 100);
+    finally
+      FSpeakerList.Items.EndUpdate;
+      FMessageList.Items.EndUpdate;
+    end;
+  finally
+    FLoading := False;
+  end;
+  LoadMessage(nil);
+  LoadSpeaker(nil);
+  FDirty := True;
+end;
+
+procedure TFormMineSettings.LoadMessage(Sender: TObject);
+var
+  I: Integer;
+begin
+  I := FMessageList.ItemIndex;
+  FLoading := True;
+  try
+    FText.Enabled := I >= 0;
+    FSender.Enabled := I >= 0;
+    FTime.Enabled := I >= 0;
+    FText.Clear;
+    FPhoto.Clear;
+    FTime.Clear;
+    FSender.ItemIndex := -1;
+    if I >= 0 then
+    begin
+      FText.Text := FData.Messages[I].Text;
+      FPhoto.Text := FData.Messages[I].PhotoFile;
+      FTime.Text := FData.Messages[I].TimeText;
+      FSender.ItemIndex := FData.Messages[I].Speaker;
+      FStage.Position := (I + 1) * 100;
+    end;
+  finally
+    FLoading := False;
+  end;
+  UpdateMessageHint;
+  FPreview.Invalidate;
+end;
+
+procedure TFormMineSettings.LoadSpeaker(Sender: TObject);
+var
+  I: Integer;
+begin
+  I := FSpeakerList.ItemIndex;
+  if I < 0 then Exit;
+  FLoading := True;
+  try
+    FName.Text := FData.Speakers[I].Name;
+    FSide.ItemIndex := Ord(FData.Speakers[I].Outgoing);
+    FIconFile.Text := FData.Speakers[I].IconFile;
+    FNameNeedsApply := False;
+    FScale.Position := Round(FData.Speakers[I].IconScale);
+    FIconX.Position := Round(FData.Speakers[I].IconX);
+    FIconY.Position := Round(FData.Speakers[I].IconY);
+  finally
+    FLoading := False;
+  end;
+  if Sender <> nil then RememberCharacter;
+  RefreshIcon;
+end;
+
+procedure TFormMineSettings.MessageChanged(Sender: TObject);
+var
+  I: Integer;
+begin
+  if FLoading then Exit;
+  FData.Title := FTitle.Text;
+  I := FMessageList.ItemIndex;
+  if I >= 0 then
+  begin
+    if FSender.ItemIndex >= 0 then FData.Messages[I].Speaker := FSender.ItemIndex;
+    FData.Messages[I].Text := FText.Text;
+    FData.Messages[I].TimeText := FTime.Text;
+    FMessageList.Items[I] := MessageCaption(I);
+  end;
+  UpdateMessageHint;
+  FDirty := True;
+end;
+
+procedure TFormMineSettings.SpeakerChanged(Sender: TObject);
+var
+  I, J, Selected: Integer;
+begin
+  if FLoading then Exit;
+  I := FSpeakerList.ItemIndex;
+  if I < 0 then Exit;
+  FData.Speakers[I].Name := FName.Text;
+  FData.Speakers[I].Outgoing := FSide.ItemIndex = 1;
+  FData.Speakers[I].IconScale := FScale.Position;
+  FData.Speakers[I].IconX := FIconX.Position;
+  FData.Speakers[I].IconY := FIconY.Position;
+  if Sender = FName then FNameNeedsApply := True
+  else RememberCharacter;
+  FLoading := True;
+  try
+    Selected := FSender.ItemIndex;
+    FSpeakerList.Items[I] := SpeakerCaption(I);
+    FSender.Items[I] := SpeakerCaption(I);
+    FSender.ItemIndex := Selected;
+    for J := 0 to High(FData.Messages) do FMessageList.Items[J] := MessageCaption(J);
+  finally
+    FLoading := False;
+  end;
+  UpdateMessageHint;
+  RefreshIcon;
+  FDirty := True;
+end;
+
+procedure TFormMineSettings.AddMessage(Sender: TObject);
+var
+  I: Integer;
+begin
+  I := Length(FData.Messages);
+  if I >= MINE_MAX_MESSAGES then Exit;
+  SetLength(FData.Messages, I + 1);
+  FData.Messages[I] := Default(TMineMessage);
+  FData.Messages[I].Text := 'メッセージ';
+  if FSender.ItemIndex >= 0 then FData.Messages[I].Speaker := FSender.ItemIndex;
+  RefreshLists(I, FSpeakerList.ItemIndex);
+  FText.SetFocus;
+  FText.SelectAll;
+end;
+
+procedure TFormMineSettings.DeleteMessage(Sender: TObject);
+var
+  I: Integer;
+begin
+  I := FMessageList.ItemIndex;
+  if I < 0 then Exit;
+  Delete(FData.Messages, I, 1);
+  RefreshLists(I, FSpeakerList.ItemIndex);
+end;
+
+procedure TFormMineSettings.MoveMessage(Sender: TObject);
+var
+  I, J: Integer;
+  Message: TMineMessage;
+begin
+  I := FMessageList.ItemIndex;
+  J := I + TButton(Sender).Tag;
+  if (I < 0) or (J < 0) or (J >= Length(FData.Messages)) then Exit;
+  Message := FData.Messages[I];
+  FData.Messages[I] := FData.Messages[J];
+  FData.Messages[J] := Message;
+  RefreshLists(J, FSpeakerList.ItemIndex);
+end;
+
+procedure TFormMineSettings.AddSpeaker(Sender: TObject);
+var
+  I: Integer;
+begin
+  I := Length(FData.Speakers);
+  if I >= MINE_MAX_SPEAKERS then Exit;
+  SetLength(FData.Speakers, I + 1);
+  FData.Speakers[I] := Default(TMineSpeaker);
+  FData.Speakers[I].Name := '発言者 ' + IntToStr(I + 1);
+  FData.Speakers[I].IconScale := 100;
+  RefreshLists(FMessageList.ItemIndex, I);
+end;
+
+procedure TFormMineSettings.DeleteSpeaker(Sender: TObject);
+var
+  I, J: Integer;
+begin
+  I := FSpeakerList.ItemIndex;
+  if (I < 0) or (Length(FData.Speakers) <= 1) then Exit;
+  for J := 0 to High(FData.Messages) do
+    if FData.Messages[J].Speaker = I then
+    begin
+      MessageDlg('この発言者は会話で使用中です。先にメッセージの発言者を変更してください。',
+        mtInformation, [mbOK], 0);
+      Exit;
+    end;
+  Delete(FData.Speakers, I, 1);
+  for J := 0 to High(FData.Messages) do
+    if FData.Messages[J].Speaker > I then Dec(FData.Messages[J].Speaker);
+  RefreshLists(FMessageList.ItemIndex, I);
+end;
+
+function TFormMineSettings.ChooseImage(out FileName: string): Boolean;
+var
+  Dialog: TOpenDialog;
+  Image: TGPBitmap;
+begin
+  Result := False;
+  Dialog := TOpenDialog.Create(Self);
+  try
+    Dialog.Filter := '画像ファイル|*.png;*.jpg;*.jpeg;*.bmp;*.gif|すべてのファイル|*.*';
+    Dialog.Options := [ofFileMustExist, ofPathMustExist, ofEnableSizing];
+    if not Dialog.Execute then Exit;
+    Image := LoadMinePicture(Dialog.FileName);
+    try
+      if Image = nil then
+      begin
+        MessageDlg('この画像を読み込めません。画像形式とサイズを確認してください。', mtError, [mbOK], 0);
+        Exit;
+      end;
+      FileName := ExpandFileName(Dialog.FileName);
+      Result := True;
+    finally
+      Image.Free;
+    end;
+  finally
+    Dialog.Free;
+  end;
+end;
+
+procedure TFormMineSettings.ChoosePhoto(Sender: TObject);
+var
+  FileName: string;
+  I: Integer;
+begin
+  I := FMessageList.ItemIndex;
+  if (I < 0) or not ChooseImage(FileName) then Exit;
+  FData.Messages[I].PhotoFile := FileName;
+  FPhoto.Text := FileName;
+  MessageChanged(nil);
+end;
+
+procedure TFormMineSettings.ClearPhoto(Sender: TObject);
+var
+  I: Integer;
+begin
+  I := FMessageList.ItemIndex;
+  if I < 0 then Exit;
+  FData.Messages[I].PhotoFile := '';
+  FPhoto.Clear;
+  MessageChanged(nil);
+end;
+
+procedure TFormMineSettings.ChooseIcon(Sender: TObject);
+var
+  FileName: string;
+  I: Integer;
+begin
+  I := FSpeakerList.ItemIndex;
+  if (I < 0) or not ChooseImage(FileName) then Exit;
+  FData.Speakers[I].IconFile := FileName;
+  FData.Speakers[I].CharacterName := '';
+  FIconFile.Text := FileName;
+  RememberCharacter;
+  RefreshIcon;
+  FDirty := True;
+end;
+
+procedure TFormMineSettings.ClearIcon(Sender: TObject);
+var
+  I: Integer;
+begin
+  I := FSpeakerList.ItemIndex;
+  if I < 0 then Exit;
+  FData.Speakers[I].IconFile := '';
+  FData.Speakers[I].CharacterName := '';
+  FIconFile.Clear;
+  RememberCharacter;
+  RefreshIcon;
+  FDirty := True;
+end;
+
+procedure TFormMineSettings.UseCharacter(Sender: TObject);
+var
+  I: Integer;
+  Name: string;
+  Profile: TMineSpeaker;
+begin
+  if FLoading then Exit;
+  I := FSpeakerList.ItemIndex;
+  Name := Trim(FName.Text);
+  if (I < 0) or (Name = '') then Exit;
+  try
+    if FHistory.Find(Name, Profile) then
+    begin
+      Profile.Outgoing := FData.Speakers[I].Outgoing;
+      FData.Speakers[I] := Profile;
+    end
+    else
+    begin
+      FData.Speakers[I].Name := Name;
+      if FBuiltinNames.IndexOf(Name) >= 0 then
+      begin
+        FData.Speakers[I].IconFile := MineCharacterIconFile(Name);
+        FData.Speakers[I].CharacterName := Name;
+        FData.Speakers[I].IconScale := 100;
+        FData.Speakers[I].IconX := 0;
+        FData.Speakers[I].IconY := 0;
+      end;
+    end;
+    FNameNeedsApply := False;
+    RememberCharacter;
+    RefreshCharacterNames;
+    LoadSpeaker(nil);
+    SpeakerChanged(nil);
+    RefreshIcon;
+    FDirty := True;
+  except
+    on E: Exception do MessageDlg(E.Message, mtError, [mbOK], 0);
+  end;
+end;
+
+procedure TFormMineSettings.CharacterNameExit(Sender: TObject);
+begin
+  if FNameNeedsApply then UseCharacter(Sender);
+end;
+
+procedure TFormMineSettings.CharacterNamesDropDown(Sender: TObject);
+begin
+  RefreshCharacterNames;
+end;
+
+procedure TFormMineSettings.RememberCharacter;
+var
+  I: Integer;
+begin
+  I := FSpeakerList.ItemIndex;
+  if (I >= 0) and not FNameNeedsApply and (FData.Speakers[I].Name.Trim <> '') then
+    FHistory.Remember(FData.Speakers[I]);
+end;
+
+procedure TFormMineSettings.RefreshCharacterNames;
+var
+  Text: string;
+  Loading: Boolean;
+begin
+  Text := FName.Text;
+  Loading := FLoading;
+  FLoading := True;
+  try
+    FHistory.FillNames(FName.Items, FBuiltinNames);
+    FName.Text := Text;
+  finally
+    FLoading := Loading;
+  end;
+end;
+
+procedure TFormMineSettings.RefreshIcon;
+begin
+  if FIconFile.Text <> FIconImageFile then
+  begin
+    FreeAndNil(FIconImage);
+    FIconImageFile := FIconFile.Text;
+    FIconImage := LoadMinePicture(FIconImageFile);
+  end;
+  FTransformLabel.Caption := Format('拡大率 %d%%    X %d%%    Y %d%%',
+    [FScale.Position, FIconX.Position, FIconY.Position]);
+  FIconPreview.Invalidate;
+end;
+
+procedure TFormMineSettings.PaintIcon(Sender: TObject);
+var
+  Target: TGPGraphics;
+  Size, Margin: Integer;
+begin
+  FIconPreview.Canvas.Brush.Color := $00404040;
+  FIconPreview.Canvas.FillRect(FIconPreview.ClientRect);
+  Margin := ScaleValue(6);
+  Size := Min(FIconPreview.Width, FIconPreview.Height) - Margin * 2;
+  Target := TGPGraphics.Create(FIconPreview.Canvas.Handle);
+  try
+    Target.SetSmoothingMode(SmoothingModeAntiAlias);
+    Target.SetInterpolationMode(InterpolationModeHighQualityBicubic);
+    DrawMineIcon(Target, FIconImage, MakeRect(Single(Margin), Single(Margin), Single(Size), Single(Size)),
+      FScale.Position, FIconX.Position, FIconY.Position);
+  finally
+    Target.Free;
+  end;
+end;
+
+procedure TFormMineSettings.PaintPreview(Sender: TObject);
+var
+  Buffer: TBitmap;
+  Target: TGPGraphics;
+  W, H, X, Y, CellSize, Margin: Integer;
+  Ratio: Double;
+begin
+  if FPreview.ClientRect.IsEmpty then Exit;
+  Buffer := TBitmap.Create;
+  try
+    Buffer.SetSize(FPreview.Width, FPreview.Height);
+    CellSize := Max(1, ScaleValue(16));
+    Margin := ScaleValue(20);
+    for Y := 0 to (Buffer.Height - 1) div CellSize do
+      for X := 0 to (Buffer.Width - 1) div CellSize do
+      begin
+        if Odd(X + Y) then Buffer.Canvas.Brush.Color := $00353535
+        else Buffer.Canvas.Brush.Color := $003D3D3D;
+        Buffer.Canvas.FillRect(Rect(X * CellSize, Y * CellSize,
+          (X + 1) * CellSize, (Y + 1) * CellSize));
+      end;
+    MinePhoneSize(FOrientation.ItemIndex, W, H);
+    Ratio := Min(Max(1, FPreview.Width - Margin) / W,
+      Max(1, FPreview.Height - Margin) / H);
+    W := Max(1, Round(W * Ratio));
+    H := Max(1, Round(H * Ratio));
+    X := (FPreview.Width - W) div 2;
+    Y := (FPreview.Height - H) div 2;
+    Target := TGPGraphics.Create(Buffer.Canvas.Handle);
+    try
+      FRenderer.Draw(Target, Rect(X, Y, X + W, Y + H), FStage.Position, FPhoneColor);
+    finally
+      Target.Free;
+    end;
+    FPreview.Canvas.Draw(0, 0, Buffer);
+  finally
+    Buffer.Free;
+  end;
+end;
+
+procedure TFormMineSettings.PreviewChanged(Sender: TObject);
+var
+  I, Step: Integer;
+begin
+  FStageLabel.Caption := Format('段階 %d / %d', [FStage.Position, Length(FData.Messages) * 100]);
+  I := FStage.Position div 100;
+  Step := FStage.Position mod 100;
+  if FStage.Position = 0 then FStatus.Caption := '会話なし'
+  else if Step = 0 then FStatus.Caption := Format('%d件目が既読', [I])
+  else if I < Length(FData.Messages) then
+  begin
+    if FData.Speakers[FData.Messages[I].Speaker].Outgoing then
+      if Step <= 85 then FStatus.Caption := Format('%d件目：自分が入力中', [I + 1])
+      else FStatus.Caption := Format('%d件目：自分が送信中', [I + 1])
+    else FStatus.Caption := Format('%d件目：相手から受信中', [I + 1]);
+  end;
+  if Sender = FOrientation then FDirty := True;
+  FPreview.Invalidate;
+end;
+
+procedure TFormMineSettings.Tick(Sender: TObject);
+begin
+  if not FDirty then Exit;
+  FDirty := False;
+  try
+    FRenderer.Prepare(FData, FOrientation.ItemIndex);
+    PreviewChanged(nil);
+  except
+    on E: Exception do FStatus.Caption := E.Message;
+  end;
+end;
+
+procedure TFormMineSettings.Accept(Sender: TObject);
+begin
+  try
+    CharacterNameExit(nil);
+    FData.Validate;
+    if FNameNeedsApply then Exit;
+    RememberCharacter;
+    FHistory.Save;
+    ModalResult := mrOk;
+  except
+    on E: Exception do MessageDlg(E.Message, mtError, [mbOK], 0);
+  end;
+end;
+
+function EditMineSettings(var JSON: string; Orientation: Integer; PhoneColor: Cardinal): Boolean;
+var
+  Form: TFormMineSettings;
+begin
+  Form := TFormMineSettings.CreateForConversation(JSON, Orientation, PhoneColor);
+  try
+    Result := Form.ShowModal = mrOk;
+    if Result then JSON := Form.FData.ToJSON;
+  finally
+    Form.Free;
+  end;
+end;
+
+procedure CheckMineDPI(DPI: Integer; const OutputFolder: string);
+var
+  Form: TFormMineSettings;
+  Pages: TPageControl;
+  Bitmap: TBitmap;
+  PNG: TPngImage;
+  Area: TRect;
+  I, Checks: Integer;
+  Footer: TWinControl;
+
+  procedure Check(Value: Boolean; const Message: string);
+  begin
+    if not Value then raise Exception.CreateFmt('%d DPI: %s', [DPI, Message]);
+    Inc(Checks);
+  end;
+
+  procedure LabelBefore(const Caption: string; Editor: TControl);
+  var
+    I: Integer;
+    LabelControl: TLabel;
+  begin
+    for I := 0 to Editor.Parent.ControlCount - 1 do
+      if Editor.Parent.Controls[I] is TLabel then
+      begin
+        LabelControl := TLabel(Editor.Parent.Controls[I]);
+        if LabelControl.Caption = Caption then
+        begin
+          Check(LabelControl.BoundsRect.Right <= Editor.Left, Caption + ' overlaps editor');
+          Exit;
+        end;
+      end;
+    raise Exception.Create('Missing label ' + Caption);
+  end;
+
+  procedure SavePage(Page: Integer; const Suffix: string);
+  begin
+    Pages.ActivePageIndex := Page;
+    Form.Realign;
+    Form.Update;
+    Application.ProcessMessages;
+    Bitmap := Form.GetFormImage;
+    try
+      Bitmap.PixelFormat := pf24bit;
+      PNG := TPngImage.Create;
+      try
+        PNG.Assign(Bitmap);
+        PNG.SaveToFile(TPath.Combine(OutputFolder, Format('dpi%d-%s.png', [DPI, Suffix])));
+      finally
+        PNG.Free;
+      end;
+    finally
+      Bitmap.Free;
+    end;
+  end;
+
+begin
+  Checks := 0;
+  Form := TFormMineSettings.CreateForConversation('{"title":"トーク","messages": [{"text":"DPIの表示確認です。","speaker":0}]}', 0, $FF202428);
+  try
+    Form.FTimer.Enabled := False;
+    DpiSnapshotFullSize := True;
+    Form.Show;
+    Form.Update;
+    Form.ScaleForPPI(DPI);
+    Form.ClientWidth := Form.ScaleValue(1040);
+    Form.ClientHeight := Form.ScaleValue(740);
+    Form.Resize;
+    Form.Tick(nil);
+    Pages := TTabSheet(Form.FMessageList.Parent.Parent).PageControl;
+    Check(Form.FData.Speakers[0].Name = '相手', 'speaker name preserved during scaling');
+    Check(Form.FName.Text = '相手', 'editable combo text preserved during scaling');
+    Check(Form.Font.PixelsPerInch = DPI, 'font DPI');
+    Check(Abs(Form.Font.Height) = MulDiv(13, DPI, 96), 'font follows geometry');
+    Check(Form.FMessageList.Width = Form.ScaleValue(586), 'message list width');
+    Check(Form.FText.Top = Form.ScaleValue(422), 'memo position');
+    LabelBefore('トーク名', Form.FTitle);
+    LabelBefore('発言者', Form.FSender);
+    LabelBefore('時刻', Form.FTime);
+    LabelBefore('写真', Form.FPhoto);
+    LabelBefore('キャラ名', Form.FName);
+    LabelBefore('自分／相手', Form.FSide);
+    Check(Form.FText.BoundsRect.Bottom < Form.FMessageHint.Top, 'message hint overlaps memo');
+    Check(Form.FStageLabel.BoundsRect.Bottom <= Form.FStage.Top, 'stage label overlaps slider');
+    Check(Form.FStage.BoundsRect.Bottom <= Form.FOrientation.Top, 'stage slider overlaps orientation');
+    Check(Form.FOrientation.BoundsRect.Bottom <= Form.FStatus.Top, 'orientation overlaps status');
+    Check(Form.FStatus.BoundsRect.Bottom <= Form.FPreviewFooter.ClientHeight, 'status clipped');
+    Footer := Form.Controls[0] as TWinControl;
+    for I := 0 to Form.ComponentCount - 1 do
+      if (Form.Components[I] is TButton) and
+        (TButton(Form.Components[I]).Caption = 'キャンセル') then
+      begin
+        Footer := TButton(Form.Components[I]).Parent;
+        Check(Abs(TButton(Form.Components[I]).Width - Form.ScaleValue(90)) <= 1, 'cancel width');
+        Check(Abs(TButton(Form.Components[I]).Height - Form.ScaleValue(30)) <= 1, 'cancel height');
+      end;
+    SavePage(0, 'messages');
+    SavePage(1, 'icons');
+    DpiSnapshotFullSize := False;
+    Form.FitToWorkArea;
+    Form.Resize;
+    Area := Form.Monitor.WorkareaRect;
+    Check((Form.Width <= Area.Width) and (Form.Height <= Area.Height), 'fits monitor work area');
+    Check(Form.FStage.BoundsRect.Right <= Form.FPreviewFooter.ClientWidth, 'slider clipped after fit');
+    for I := 0 to Footer.ControlCount - 1 do
+      Check((Footer.Controls[I].Left >= 0) and
+        (Footer.Controls[I].BoundsRect.Right <= Footer.ClientWidth) and
+        (Footer.Controls[I].BoundsRect.Bottom <= Footer.ClientHeight), 'dialog buttons clipped after fit');
+    SavePage(0, 'fit');
+    TScrollBox(Form.FText.Parent).ScrollInView(Form.FText);
+    TFile.AppendAllText(TPath.Combine(OutputFolder, 'scroll-debug.txt'),
+      Format('%d DPI: memo top=%d height=%d bottom=%d; parent=%dx%d; v.range=%d pos=%d visible=%s',
+      [DPI, Form.FText.Top, Form.FText.Height, Form.FText.BoundsRect.Bottom, Form.FText.Parent.ClientWidth,
+      Form.FText.Parent.ClientHeight, TScrollBox(Form.FText.Parent).VertScrollBar.Range,
+      TScrollBox(Form.FText.Parent).VertScrollBar.Position,
+      BoolToStr(TScrollBox(Form.FText.Parent).VertScrollBar.Visible, True)]) + sLineBreak, TEncoding.UTF8);
+    Check(Form.FText.BoundsRect.Bottom <= Form.FText.Parent.ClientHeight, 'memo reachable by scrolling');
+    SavePage(0, 'scrolled');
+    Form.ScaleForPPI(96);
+    Form.ScaleForPPI(DPI);
+    Check(Form.Font.PixelsPerInch = DPI, 'font DPI after monitor change');
+    Check(Abs(Form.Font.Height) = MulDiv(13, DPI, 96), 'font scale round trip');
+    TFile.AppendAllText(TPath.Combine(OutputFolder, 'dpi-checks.txt'),
+      Format('PASS %d DPI: %d layout checks; font=%dpx, client=%dx%d',
+      [DPI, Checks, Form.Font.Height, Form.ClientWidth, Form.ClientHeight]) + sLineBreak, TEncoding.UTF8);
+  finally
+    Form.Free;
+  end;
+end;
+end.

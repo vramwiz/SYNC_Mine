@@ -1,0 +1,14 @@
+*.~* 
+__history/ 
+*.dcu 
+*.local 
+*.identcache 
+*.exe 
+*.bat 
+!setup/make_release_zip.bat
+setup/.release-*.tmp
+*.dll 
+*.map 
+*.tds 
+*.dsk 
+.DS_Store

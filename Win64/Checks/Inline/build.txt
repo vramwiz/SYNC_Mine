@@ -1,0 +1,3 @@
+  Embarcadero Delphi for Win64 compiler version 37.0
+  Copyright (c) 1983,2026 Embarcadero Technologies, Inc.
+  6801 行、0.88 秒、4016972 バイト コード、414336 バイト データ。

@@ -1,0 +1,8 @@
+96 DPI: memo top=422 height=160 bottom=582; parent=623x630; v.range=645 pos=0 visible=True
+120 DPI: memo top=482 height=200 bottom=682; parent=785x680; v.range=806 pos=46 visible=True
+144 DPI: memo top=415 height=240 bottom=655; parent=917x653; v.range=968 pos=218 visible=True
+192 DPI: memo top=271 height=320 bottom=591; parent=935x589; v.range=1290 pos=573 visible=True
+96 DPI: memo top=422 height=160 bottom=582; parent=623x630; v.range=657 pos=0 visible=True
+120 DPI: memo top=467 height=200 bottom=667; parent=785x680; v.range=821 pos=61 visible=True
+144 DPI: memo top=397 height=240 bottom=637; parent=917x653; v.range=986 pos=236 visible=True
+192 DPI: memo top=247 height=320 bottom=567; parent=935x589; v.range=1314 pos=597 visible=True

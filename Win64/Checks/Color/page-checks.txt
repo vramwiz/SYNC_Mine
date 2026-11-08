@@ -1,0 +1,4 @@
+﻿PASS 96 DPI: 55 checks, client=1040x740, icon=500x610
+PASS 120 DPI: 55 checks, client=1300x813, icon=625x650
+PASS 144 DPI: 55 checks, client=1424x813, icon=720x618
+PASS 192 DPI: 55 checks, client=1424x813, icon=708x553

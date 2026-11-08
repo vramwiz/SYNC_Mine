@@ -1,0 +1,4 @@
+﻿PASS 96 DPI: 26 layout checks; font=-13px, client=1040x740
+PASS 120 DPI: 26 layout checks; font=-16px, client=1300x814
+PASS 144 DPI: 26 layout checks; font=-20px, client=1424x813
+PASS 192 DPI: 26 layout checks; font=-26px, client=1424x813

@@ -1,0 +1,20 @@
+﻿PASS empty initial conversation
+PASS shared character resource names
+PASS shared VectorRenderer generated referenced PNG
+PASS JSON Unicode, multiline, file references and icon transform round trip
+PASS legacy scaffold default
+PASS reject malformed JSON
+PASS reject invalid speaker reference
+PASS transparent outside rounded phone
+PASS stage 50 changes before stage 100
+PASS stage 50 differs from completed message
+PASS stage 99 unread and 100 read are distinct
+PASS typing leaves chat unchanged until sending
+PASS own message types into input area
+PASS photo send uses 100 steps and becomes read at 200
+PASS seeking backwards reproduces exact pixels
+PASS landscape geometry and scrolling
+PASS offscreen clipping
+PASS generated icon loads
+PASS icon scale and position correction
+Arguments="V:\DelphiProg\SYNC_Mine\Win64\Checks\_MineChecks.exe" --check

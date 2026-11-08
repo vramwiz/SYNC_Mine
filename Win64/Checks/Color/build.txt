@@ -1,0 +1,4 @@
+  Embarcadero Delphi for Win64 compiler version 37.0
+  Copyright (c) 1983,2026 Embarcadero Technologies, Inc.
+Win64\Checks\Color\SYNC_MINE_SettingsForm.pas(1265): warning W1023: 符号付きの型と符合なしの型を比較しています (両オペランドを拡張しました) [V:\DelphiProg\SYNC_Mine\_MineColorChecks.dproj]
+  6947 行、1.06 秒、4023556 バイト コード、414952 バイト データ。

@@ -1,0 +1,20 @@
+﻿PASS uses Windows Documents/SYNC_MINE
+PASS builtin list available before any history
+PASS custom name and profile persisted
+PASS custom Unicode name restored on reopen
+PASS image path and crop transform round trip
+PASS conversation side is excluded from shared profile
+PASS history precedes builtin list
+PASS recent builtin name moves to top without duplication
+PASS reused name moves to top
+PASS discarded edit does not persist history
+PASS independent editors merge without losing names
+PASS latest save ordering is preserved
+PASS case insensitive duplicate updates profile
+PASS duplicate case creates only one candidate
+PASS invalid history is rejected
+PASS invalid file is not overwritten during merge
+PASS original invalid file remains intact
+PASS GDI+ starts
+PASS generated character icon resides under Documents/SYNC_MINE
+ALL 19 CHECKS PASSED
