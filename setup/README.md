@@ -75,7 +75,7 @@ MINEのソースコードは GNU General Public License v3.0（GPL-3.0）です�
 
 以下は開発用プロジェクトでの手順です。
 
-1. Win64のReleaseをビルドします。配布バッチは `Win64\Release\SYNC_MINE.auf2` を使用します。
+1. Win64のReleaseを `/p:DCC_ExeOutput=.\Win64\Release` 付きでビルドします。配布バッチは `Win64\Release\SYNC_MINE.auf2` を使用します。ビルドコマンドは [作業ノート](../note.md#ビルド) を参照してください。
 2. `xxhsum.exe` を `Win64\Dependencies\xxHash-0.8.4` またはPATHの通った場所へ配置します。
 3. `setup\SYNC_MINE.catalog.json` の `version` 末尾に、公開するタグと日付を設定します。次の版は末尾に追加します。
 4. `setup\make_release_zip.bat` を実行します。`setup\SYNC_MINE.zip` を作成し、収録したAUF2の `XXH3_128` をJSONの末尾バージョンへ記録します。

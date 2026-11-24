@@ -61,10 +61,10 @@ MINEのソースコードは GNU General Public License v3.0（GPL-3.0）です�
 
 ## ビルド
 
-Delphi 37.0 で `SYNC_MINE.dproj` を開き、Win64 の Debug または Release をビルドします。コピー元のビルド後イベントにより `.auf2` を作成し、`C:\ProgramData\aviutl2\Plugin\SYNC_MINE\SYNC_MINE.auf2` へ配置します。起動中の AviUtl2 では再起動して読み込みます。
+Delphi 37.0 で `SYNC_MINE.dproj` を開き、Win64 の Debug または Release をビルドします。既定では `C:\ProgramData\aviutl2\Plugin\SYNC_MINE\` に `SYNC_MINE.auf2` を生成します。MSBuild では `/p:DCC_ExeOutput=出力先` で出力先を切り替えられます。起動中の AviUtl2 では再起動して読み込みます。
 
 キャラアイコンには、`..\AviUtl2Plugin\AviUtl2PluginLib` の VectorRenderer・RTTI保存基盤と `Serif\Chara\SerifCharaVectorResource.RES` を相対参照で再利用します。実行時のキャラデータはプラグインに埋め込みます。
 
-配布ZIPは `setup\make_release_zip.bat` で作成します。`Win64\Release\SYNC_MINE.auf2` と利用者向けREADME・ライセンスを収録し、`setup\SYNC_MINE.catalog.json` の末尾バージョンへXXH3-128を記録します。詳しくは [配布用README](setup/README.md) を参照してください。
+配布用の Release は `/p:DCC_ExeOutput=.\Win64\Release` を付けてビルドします。`setup\make_release_zip.bat` はこの `.auf2` と利用者向けREADME・ライセンスを収録し、`setup\SYNC_MINE.catalog.json` の末尾バージョンへXXH3-128を記録します。詳しくは [配布用README](setup/README.md) を参照してください。
 
 開発手順は [note.md](note.md)、ライセンスは [LICENSE](LICENSE)、移植元は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照してください。

@@ -58,11 +58,11 @@
         <DCC_Define>DEBUG;$(DCC_Define)</DCC_Define>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_1_Win64)'!=''">
-        <PostBuildEvent><![CDATA[(if not exist "C:\ProgramData\aviutl2\Plugin\SYNC_MINE\." mkdir "C:\ProgramData\aviutl2\Plugin\SYNC_MINE") && copy /Y "$(OUTPUTDIR)$(PROJECTNAME).dll" "$(OUTPUTDIR)$(PROJECTNAME).auf2" && copy /Y "$(OUTPUTDIR)$(PROJECTNAME).auf2" "C:\ProgramData\aviutl2\Plugin\SYNC_MINE\$(PROJECTNAME).auf2" && del /Q "$(OUTPUTDIR)$(PROJECTNAME).dll"]]></PostBuildEvent>
+        <PostBuildEvent><![CDATA[copy /Y "$(OUTPUTDIR)$(PROJECTNAME).dll" "$(OUTPUTDIR)$(PROJECTNAME).auf2" && del /Q "$(OUTPUTDIR)$(PROJECTNAME).dll"]]></PostBuildEvent>
         <PostBuildEventIgnoreExitCode>False</PostBuildEventIgnoreExitCode>
         <PostBuildEventExecuteWhen>Always</PostBuildEventExecuteWhen>
         <DCC_DcuOutput>.\Win64\Debug\DCU</DCC_DcuOutput>
-        <DCC_ExeOutput>.\Win64\Debug</DCC_ExeOutput>
+        <DCC_ExeOutput>C:\ProgramData\aviutl2\Plugin\SYNC_MINE\</DCC_ExeOutput>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2)'!=''">
         <DCC_Optimize>true</DCC_Optimize>
@@ -73,14 +73,14 @@
         <DCC_LocalDebugSymbols>false</DCC_LocalDebugSymbols>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2_Win64)'!=''">
-        <PostBuildEvent><![CDATA[(if not exist "C:\ProgramData\aviutl2\Plugin\SYNC_MINE\." mkdir "C:\ProgramData\aviutl2\Plugin\SYNC_MINE") && copy /Y "$(OUTPUTDIR)$(PROJECTNAME).dll" "$(OUTPUTDIR)$(PROJECTNAME).auf2" && copy /Y "$(OUTPUTDIR)$(PROJECTNAME).auf2" "C:\ProgramData\aviutl2\Plugin\SYNC_MINE\$(PROJECTNAME).auf2" && del /Q "$(OUTPUTDIR)$(PROJECTNAME).dll" && (if exist "$(OUTPUTDIR)$(PROJECTNAME).rsm" del /Q "$(OUTPUTDIR)$(PROJECTNAME).rsm")]]></PostBuildEvent>
+        <PostBuildEvent><![CDATA[copy /Y "$(OUTPUTDIR)$(PROJECTNAME).dll" "$(OUTPUTDIR)$(PROJECTNAME).auf2" && del /Q "$(OUTPUTDIR)$(PROJECTNAME).dll" && (if exist "$(OUTPUTDIR)$(PROJECTNAME).rsm" del /Q "$(OUTPUTDIR)$(PROJECTNAME).rsm")]]></PostBuildEvent>
         <PostBuildEventIgnoreExitCode>False</PostBuildEventIgnoreExitCode>
         <PostBuildEventExecuteWhen>Always</PostBuildEventExecuteWhen>
         <DCC_DcuOutput>.\Win64\Release\DCU</DCC_DcuOutput>
         <VerInfo_Locale>1041</VerInfo_Locale>
         <Manifest_File>(なし)</Manifest_File>
         <AppDPIAwarenessMode>none</AppDPIAwarenessMode>
-        <DCC_ExeOutput>.\Win64\Release</DCC_ExeOutput>
+        <DCC_ExeOutput>C:\ProgramData\aviutl2\Plugin\SYNC_MINE\</DCC_ExeOutput>
         <Debugger_HostApplication>D:\aviutl2_v2.1.3a\aviutl2.exe</Debugger_HostApplication>
     </PropertyGroup>
     <ItemGroup>
@@ -146,12 +146,12 @@
     <Import Project="$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj" Condition="Exists('$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj')"/>
     <Import Project="$(MSBuildProjectName).deployproj" Condition="Exists('$(MSBuildProjectName).deployproj')"/>
     <PropertyGroup Condition="'$(Config)'=='Debug' And '$(Platform)'=='Win64'">
-        <PostBuildEvent>(if not exist &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MINE\.&quot; mkdir &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MINE&quot;) &amp;&amp; copy /Y &quot;$(OUTPUTDIR)$(PROJECTNAME).dll&quot; &quot;$(OUTPUTDIR)$(PROJECTNAME).auf2&quot; &amp;&amp; copy /Y &quot;$(OUTPUTDIR)$(PROJECTNAME).auf2&quot; &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MINE\$(PROJECTNAME).auf2&quot; &amp;&amp; del /Q &quot;$(OUTPUTDIR)$(PROJECTNAME).dll&quot;</PostBuildEvent>
+        <PostBuildEvent><![CDATA[copy /Y "$(OUTPUTDIR)$(PROJECTNAME).dll" "$(OUTPUTDIR)$(PROJECTNAME).auf2" && del /Q "$(OUTPUTDIR)$(PROJECTNAME).dll"]]></PostBuildEvent>
         <PostBuildEventIgnoreExitCode>False</PostBuildEventIgnoreExitCode>
         <PostBuildEventExecuteWhen>Always</PostBuildEventExecuteWhen>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Config)'=='Release' And '$(Platform)'=='Win64'">
-        <PostBuildEvent>(if not exist &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MINE\.&quot; mkdir &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MINE&quot;) &amp;&amp; copy /Y &quot;$(OUTPUTDIR)$(PROJECTNAME).dll&quot; &quot;$(OUTPUTDIR)$(PROJECTNAME).auf2&quot; &amp;&amp; copy /Y &quot;$(OUTPUTDIR)$(PROJECTNAME).auf2&quot; &quot;C:\ProgramData\aviutl2\Plugin\SYNC_MINE\$(PROJECTNAME).auf2&quot; &amp;&amp; del /Q &quot;$(OUTPUTDIR)$(PROJECTNAME).dll&quot; &amp;&amp; (if exist &quot;$(OUTPUTDIR)$(PROJECTNAME).rsm&quot; del /Q &quot;$(OUTPUTDIR)$(PROJECTNAME).rsm&quot;)</PostBuildEvent>
+        <PostBuildEvent><![CDATA[copy /Y "$(OUTPUTDIR)$(PROJECTNAME).dll" "$(OUTPUTDIR)$(PROJECTNAME).auf2" && del /Q "$(OUTPUTDIR)$(PROJECTNAME).dll" && (if exist "$(OUTPUTDIR)$(PROJECTNAME).rsm" del /Q "$(OUTPUTDIR)$(PROJECTNAME).rsm")]]></PostBuildEvent>
         <PostBuildEventIgnoreExitCode>False</PostBuildEventIgnoreExitCode>
         <PostBuildEventExecuteWhen>Always</PostBuildEventExecuteWhen>
     </PropertyGroup>

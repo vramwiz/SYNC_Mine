@@ -2,8 +2,8 @@
 
 ## プロジェクトの前提
 
-- プロジェクトフォルダーは `V:\DelphiProg\SYNC_Mine`、Delphi プロジェクト名は `SYNC_MINE`。AviUtl2 のグループ名は `SYNC`、プラグイン名は `MINE`。
-- `V:\DelphiProg\SYNC_Nicomea` のプロジェクトと共通基盤をコピーした。ビルド設定とビルド後イベントはコピー元を引き継ぎ、プロジェクト名・GUID・ユニット参照・配置先のみを新しいプロジェクトに合わせる。
+- Delphi プロジェクトはルートの `SYNC_MINE.dproj`。AviUtl2 のグループ名は `SYNC`、プラグイン名は `MINE`。
+- `V:\DelphiProg\SYNC_Nicomea` のプロジェクトと共通基盤をコピーした。現在のビルド設定は下記の手順を参照する。
 - 「設定」ボタンと X・Y・拡大率・透明度を残す。初期値と範囲はコピー元と同じ。X・Y は 0（-4096～4096）、拡大率は 100（0～1000）、透明度は 0（0～100）。変更単位はX・Y・拡大率が0.1、透明度が1。
 - スマホ本体とLINE風の会話を描画する。「スマホの方向」は縦向き／横向きの切り替え、「スマホの色」は本体色。「段階」は0～100000、変更単位1。吹き出しは既定で自分側が緑、相手側が白とし、設定ページで変更できる。
 - 横向きではカメラ・スピーカーの黒い部分を左辺中央に縦長で配置する。相手側のアイコン・名前・吹き出しは32px右へ寄せ、カメラ部分と重ならない余白を確保する。
@@ -46,10 +46,18 @@ cmd /c 'call "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\rsvars.bat" && 
 cmd /c 'call "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\rsvars.bat" && msbuild SYNC_MINE.dproj /t:Build /p:Config=Release /p:Platform=Win64'
 ```
 
+出力先を切り替える場合は、MSBuild に `/p:DCC_ExeOutput=出力先` を追加する。たとえば、配布用 Release を `Win64\Release` に出力するには次を実行する。
+
+```powershell
+cmd /c 'call "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\rsvars.bat" && msbuild SYNC_MINE.dproj /t:Build /p:Config=Release /p:Platform=Win64 /p:DCC_ExeOutput=.\Win64\Release'
+```
+
+絶対パスも指定できる。空白を含む場合は `/p:DCC_ExeOutput="D:\Build Output\SYNC_MINE"` のように値を囲む。
+
 ## ビルド後イベントとプロジェクト登録
 
-- AviUtl2 プラグインの配置処理は、Delphi IDE のプロジェクトオプションにある「ビルド後イベント」に直接記述する。Debug / Release の両方で、`copy /Y` により DLL からローカルの `.auf2` を作成し、配置先へコピーする。両方のコピーが成功した後に `del /Q` で中間 DLL を削除する。Release では RSM も削除する。
-- 配置先は `C:\ProgramData\aviutl2\Plugin\SYNC_MINE`。ローカルの成果物は `Win64\Debug\SYNC_MINE.auf2` と `Win64\Release\SYNC_MINE.auf2`。Debug と Release は同じ配置先にコピーされる。
+- Win64 Debug / Release の既定の出力先は `C:\ProgramData\aviutl2\Plugin\SYNC_MINE\`。IDE ではプロジェクトオプションの Delphi コンパイラの出力先を変更する。DCU の出力先は `Win64\Debug\DCU` / `Win64\Release\DCU`。
+- `SYNC_WeatherFX` と同じく、ビルド後イベントは `$(OUTPUTDIR)` 内で DLL を `SYNC_MINE.auf2` へコピーし、成功後に DLL を削除する。Release では RSM も削除する。
 - ユニットを追加したら、`.dpr` の `in` 指定と `.dproj` の `DCCReference` を両方更新する。フォームやフレームの IDE メタデータも対応させる。
 
 ## ソース配置
