@@ -134,3 +134,9 @@ cmd /c 'call "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\rsvars.bat" && 
 - カタログは `setup/SYNC_MINE.catalog.json`。初版は `v1.0.0` / `2026-11-08`。GitHub公開先は `vramwiz/SYNC_MINE` を初期値とし、ZIPへ収録したAUF2のXXH3-128を末尾バージョンへ記録する。インストール先は既存どおり `{pluginsDir}/SYNC_MINE`。アンインストールにDocumentsや利用者の素材を含めない。
 - ハッシュ計算用の `xxhsum.exe` は `Win64/Dependencies/xxHash-0.8.4` またはPATHから解決し、`-XxhsumPath` でも指定できる。バッチをGitの無視対象から除外する。
 - 本体は既存どおりGPL-3.0、著作権表示は2026 VRAMの魔術師。README・第三者通知・カタログに記載する。MIT部分はColorPicker（2025 vramwiz）とRhythmControls（2026 VRAMの魔術師）の元の本文を保持し、キャラクター等の素材には各素材の利用条件が適用される旨を記載する。
+
+## AviUtl2カタログ登録時の共通ルール
+
+1. **概要は35文字以内。** `Setup/*.catalog.json` の `summary` は、JSONのエスケープ表記ではなく実際の表示文字列を数える。機能の詳細や補足は概要に詰め込まず、説明・READMEに記載する。
+2. **既存タグを優先する。** [公開カタログの `index.json`](https://github.com/Neosku/aviutl2-catalog-data/blob/main/index.json) で、同じ製品や近い用途に使われているタグの表記を確認し、用途を表すものだけを選ぶ。同義語を重ねたり、製品ごとに新しいタグを量産したりしない。
+3. **配布専用フォルダー単位で導入・削除する。** ZIP内を製品専用フォルダーにまとめ、ダウンロード・展開後の配置はフォルダーの `copy` 1件、アンインストールはその専用フォルダーだけを指定する `delete` 1件を基本とする。共有フォルダーや、ユーザー素材・設定を含むフォルダーは一括削除しない。既存パッケージで変更する際は、配布ZIPの配置とセットアップスクリプトの検証条件も確認し、整合しない場合は既存の手順を維持する。
