@@ -16,9 +16,11 @@ uses
   VectorRenderer in '..\AviUtl2Plugin\AviUtl2PluginLib\Lib\VectorRenderer\VectorRenderer.pas',
   VectorRendererImageList in '..\AviUtl2Plugin\AviUtl2PluginLib\Lib\VectorRenderer\VectorRendererImageList.pas',
   SYNC_MINE_Conversation in 'Source\Common\Conversation\SYNC_MINE_Conversation.pas',
+  SYNC_MINE_Timeline in 'Source\Common\Conversation\SYNC_MINE_Timeline.pas',
   SYNC_MINE_UserSettings in 'Source\Common\Settings\SYNC_MINE_UserSettings.pas',
   SYNC_MINE_CharacterIcons in 'Source\Common\Images\SYNC_MINE_CharacterIcons.pas',
   SYNC_MINE_Renderer in 'Source\Common\Render\SYNC_MINE_Renderer.pas',
+  SYNC_MINE_Audio in 'Source\Common\Render\SYNC_MINE_Audio.pas',
   SYNC_MINE_DarkControls in 'Source\Lib\UI\SYNC_MINE_DarkControls.pas',
   ColorPickerColorMath in 'Source\Lib\ColorPicker\ColorPickerColorMath.pas',
   ColorPickerHueBar in 'Source\Lib\ColorPicker\ColorPickerHueBar.pas',
@@ -26,7 +28,9 @@ uses
   SYNC_MINE_PaletteEditor in 'Source\Lib\UI\SYNC_MINE_PaletteEditor.pas',
   SYNC_MINE_MessageInput in 'Source\Lib\UI\SYNC_MINE_MessageInput.pas',
   SYNC_MINE_MessageList in 'Source\Lib\UI\SYNC_MINE_MessageList.pas',
+  SYNC_MINE_PhonePreview in 'Source\Lib\UI\SYNC_MINE_PhonePreview.pas',
   SYNC_MINE_SettingsForm in 'Source\Plugin\Filter\SYNC_MINE_SettingsForm.pas',
+  SYNC_MINE_TimingEditor in 'Source\Plugin\Filter\SYNC_MINE_TimingEditor.pas',
   SYNC_MINE_FilterPlugin in 'Source\Plugin\Filter\SYNC_MINE_FilterPlugin.pas';
 
 {$R *.res}
@@ -36,6 +40,7 @@ function InitializePlugin(Version: Cardinal): Byte; cdecl;
 begin
   Result := 0;
   try
+    if Version < MINE_REQUIRED_VERSION then Exit;
     if not StartMineGraphics then Exit;
     GetMineFilterTable;
     Result := 1;
@@ -50,6 +55,11 @@ begin
   StopMineGraphics;
 end;
 
+function RequiredVersion: Cardinal; cdecl;
+begin
+  Result := MINE_REQUIRED_VERSION;
+end;
+
 function GetFilterPluginTable: PFILTER_PLUGIN_TABLE; cdecl;
 begin
   Result := nil;
@@ -61,9 +71,11 @@ begin
 end;
 
 exports
+  RequiredVersion name 'RequiredVersion',
   InitializePlugin name 'InitializePlugin',
   UninitializePlugin name 'UninitializePlugin',
   GetFilterPluginTable name 'GetFilterPluginTable';
 
 begin
+  System.IsMultiThread := True; // AviUtl2 の映像・音声スレッドで RTL を共有する。
 end.

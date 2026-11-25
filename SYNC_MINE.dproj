@@ -1,4 +1,4 @@
-<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
         <ProjectGuid>{1577ADE9-FFBC-46A5-84E1-B822EA7EE35F}</ProjectGuid>
         <ProjectVersion>20.4</ProjectVersion>
@@ -81,7 +81,7 @@
         <Manifest_File>(なし)</Manifest_File>
         <AppDPIAwarenessMode>none</AppDPIAwarenessMode>
         <DCC_ExeOutput>C:\ProgramData\aviutl2\Plugin\SYNC_MINE\</DCC_ExeOutput>
-        <Debugger_HostApplication>D:\aviutl2_v2.1.3a\aviutl2.exe</Debugger_HostApplication>
+        <Debugger_HostApplication>D:\aviutl2_v2.1.16\aviutl2.exe</Debugger_HostApplication>
     </PropertyGroup>
     <ItemGroup>
         <DelphiCompile Include="$(MainSource)">
@@ -98,9 +98,11 @@
         <DCCReference Include="..\AviUtl2Plugin\AviUtl2PluginLib\Lib\VectorRenderer\VectorRenderer.pas"/>
         <DCCReference Include="..\AviUtl2Plugin\AviUtl2PluginLib\Lib\VectorRenderer\VectorRendererImageList.pas"/>
         <DCCReference Include="Source\Common\Conversation\SYNC_MINE_Conversation.pas"/>
+        <DCCReference Include="Source\Common\Conversation\SYNC_MINE_Timeline.pas"/>
         <DCCReference Include="Source\Common\Settings\SYNC_MINE_UserSettings.pas"/>
         <DCCReference Include="Source\Common\Images\SYNC_MINE_CharacterIcons.pas"/>
         <DCCReference Include="Source\Common\Render\SYNC_MINE_Renderer.pas"/>
+        <DCCReference Include="Source\Common\Render\SYNC_MINE_Audio.pas"/>
         <DCCReference Include="Source\Lib\UI\SYNC_MINE_DarkControls.pas"/>
         <DCCReference Include="Source\Lib\ColorPicker\ColorPickerColorMath.pas"/>
         <DCCReference Include="Source\Lib\ColorPicker\ColorPickerHueBar.pas"/>
@@ -108,7 +110,9 @@
         <DCCReference Include="Source\Lib\UI\SYNC_MINE_PaletteEditor.pas"/>
         <DCCReference Include="Source\Lib\UI\SYNC_MINE_MessageInput.pas"/>
         <DCCReference Include="Source\Lib\UI\SYNC_MINE_MessageList.pas"/>
+        <DCCReference Include="Source\Lib\UI\SYNC_MINE_PhonePreview.pas"/>
         <DCCReference Include="Source\Plugin\Filter\SYNC_MINE_SettingsForm.pas"/>
+        <DCCReference Include="Source\Plugin\Filter\SYNC_MINE_TimingEditor.pas"/>
         <DCCReference Include="Source\Plugin\Filter\SYNC_MINE_FilterPlugin.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
@@ -146,11 +150,19 @@
     <Import Project="$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj" Condition="Exists('$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj')"/>
     <Import Project="$(MSBuildProjectName).deployproj" Condition="Exists('$(MSBuildProjectName).deployproj')"/>
     <PropertyGroup Condition="'$(Config)'=='Debug' And '$(Platform)'=='Win64'">
+        <PreBuildEvent/>
+        <PreBuildEventIgnoreExitCode>False</PreBuildEventIgnoreExitCode>
+        <PreLinkEvent/>
+        <PreLinkEventIgnoreExitCode>False</PreLinkEventIgnoreExitCode>
         <PostBuildEvent><![CDATA[copy /Y "$(OUTPUTDIR)$(PROJECTNAME).dll" "$(OUTPUTDIR)$(PROJECTNAME).auf2" && del /Q "$(OUTPUTDIR)$(PROJECTNAME).dll"]]></PostBuildEvent>
         <PostBuildEventIgnoreExitCode>False</PostBuildEventIgnoreExitCode>
         <PostBuildEventExecuteWhen>Always</PostBuildEventExecuteWhen>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Config)'=='Release' And '$(Platform)'=='Win64'">
+        <PreBuildEvent/>
+        <PreBuildEventIgnoreExitCode>False</PreBuildEventIgnoreExitCode>
+        <PreLinkEvent/>
+        <PreLinkEventIgnoreExitCode>False</PreLinkEventIgnoreExitCode>
         <PostBuildEvent><![CDATA[copy /Y "$(OUTPUTDIR)$(PROJECTNAME).dll" "$(OUTPUTDIR)$(PROJECTNAME).auf2" && del /Q "$(OUTPUTDIR)$(PROJECTNAME).dll" && (if exist "$(OUTPUTDIR)$(PROJECTNAME).rsm" del /Q "$(OUTPUTDIR)$(PROJECTNAME).rsm")]]></PostBuildEvent>
         <PostBuildEventIgnoreExitCode>False</PostBuildEventIgnoreExitCode>
         <PostBuildEventExecuteWhen>Always</PostBuildEventExecuteWhen>

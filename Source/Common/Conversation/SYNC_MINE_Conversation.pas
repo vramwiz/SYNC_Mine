@@ -8,8 +8,14 @@ const
   MINE_MAX_MESSAGES = 1000;
   MINE_MAX_SPEAKERS = 64;
   MINE_DEFAULT_ICON_BACKGROUND = $00E2E8ED;
+  MINE_FIRST_MESSAGE_MS = 500;
+  MINE_MESSAGE_INTERVAL_MS = 1200;
+  MINE_MAX_MESSAGE_MS = 24 * 60 * 60 * 1000 - 1;
+  MINE_DEFAULT_VOLUME = 40;
 
 type
+  TMineAppearance = (maInstant, maFade, maTyping);
+
   TMineSpeaker = record
     Name, IconFile, CharacterName: string;
     Outgoing: Boolean;
@@ -20,6 +26,8 @@ type
   TMineMessage = record
     Speaker: Integer;
     Text, TimeText, PhotoFile: string;
+    ShowMS: Integer; // オブジェクト先頭から吹き出しが現れる時刻。
+    Appearance: TMineAppearance;
   end;
 
   TMineConversation = record
@@ -91,6 +99,8 @@ begin
     if (Length(Message.Text) > 4096) or (Length(Message.TimeText) > 32) or
       (Length(Message.PhotoFile) > 32767) then
       raise Exception.Create('本文は4096文字、時刻は32文字以内にしてください。');
+    if (Message.ShowMS < 0) or (Message.ShowMS > MINE_MAX_MESSAGE_MS) then
+      raise Exception.Create('発言の表示時刻が範囲外です。');
   end;
 end;
 
@@ -99,7 +109,7 @@ var
   Value: TJSONValue;
   Root, Item, Colors: TJSONObject;
   Items: TJSONArray;
-  I: Integer;
+  I, Appearance: Integer;
 begin
   Result := NewConversation;
   if Text.Trim = '' then Exit;
@@ -149,6 +159,12 @@ begin
         Result.Messages[I].Text := Item.GetValue<string>('text', '');
         Result.Messages[I].TimeText := Item.GetValue<string>('time', '');
         Result.Messages[I].PhotoFile := Item.GetValue<string>('photo', '');
+        Result.Messages[I].ShowMS := Item.GetValue<Integer>('showMs',
+          MINE_FIRST_MESSAGE_MS + I * MINE_MESSAGE_INTERVAL_MS);
+        Appearance := Item.GetValue<Integer>('appearance', Ord(maInstant));
+        if (Appearance < Ord(Low(TMineAppearance))) or (Appearance > Ord(High(TMineAppearance))) then
+          raise Exception.Create('発言の演出が不正です。');
+        Result.Messages[I].Appearance := TMineAppearance(Appearance);
       end;
     end;
     Result.Validate;
@@ -199,6 +215,8 @@ begin
       Item.AddPair('speaker', TJSONNumber.Create(Message.Speaker));
       Item.AddPair('text', Message.Text);
       Item.AddPair('time', Message.TimeText);
+      Item.AddPair('showMs', TJSONNumber.Create(Message.ShowMS));
+      Item.AddPair('appearance', TJSONNumber.Create(Ord(Message.Appearance)));
       Item.AddPair('photo', Message.PhotoFile);
     end;
     Result := Root.ToJSON;

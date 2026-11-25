@@ -132,7 +132,18 @@ type
   end;
 
   TFuncProcVideo = function(Video: PFILTER_PROC_VIDEO): Byte; cdecl;
-  TFuncProcAudio = function(Audio: Pointer): Byte; cdecl;
+  // SDK FILTER_PROC_AUDIO。ユーザーデータまでを参照する。
+  PFILTER_PROC_AUDIO = ^TFILTER_PROC_AUDIO;
+  TFILTER_PROC_AUDIO = record
+    Scene: PSCENE_INFO;
+    Object_: POBJECT_INFO;
+    GetSampleData: procedure(Buffer: PSingle; Channel: Integer); cdecl;
+    SetSampleData: procedure(Buffer: PSingle; Channel: Integer); cdecl;
+    Edit: PEDIT_SECTION;
+    Param, GetOutputAudioParam, GetAudioObject, SetFilterItemDataSize: Pointer;
+    UserData: Pointer;
+  end;
+  TFuncProcAudio = function(Audio: PFILTER_PROC_AUDIO): Byte; cdecl;
   TFuncCreate = function(EffectID: Int64): Pointer; cdecl;
   TFuncDestroy = procedure(EffectID: Int64; UserData: Pointer); cdecl;
 
@@ -199,7 +210,7 @@ type
     ItemType: LPCWSTR;
     Name: LPCWSTR;
     Callback: TFilterItemButtonCallback;
-    Callback2: Pointer; // SDKの新しい呼出形式。従来callbackを使うためnil。
+    Callback2: procedure(Edit: PEDIT_SECTION; Obj: OBJECT_HANDLE; Effect, Item: PWideChar); cdecl;
   end;
 
   // SDK配置はB,G,R,X。Xは予約領域であり、描画アルファには使用しない。
@@ -234,7 +245,8 @@ type
 
 const
   FILTER_FLAG_VIDEO = 1;
-  FILTER_FLAG_FILTER = 8;
+  FILTER_FLAG_AUDIO = 2;
+  FILTER_FLAG_INPUT = 4;
   FILTER_FLAG_USERDATA = 16;
 
 implementation

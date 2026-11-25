@@ -47,7 +47,7 @@ function ReorderMineMessages(var Messages: TArray<TMineMessage>; const Indices: 
 
 implementation
 
-uses
+uses SYNC_MINE_Timeline,
   System.Math, System.SysUtils, Winapi.Windows, Vcl.Graphics, SYNC_MusicStudio_DarkTheme;
 
 constructor TMineMessageList.Create(AOwner: TComponent);
@@ -254,8 +254,8 @@ begin
   SelectObject(Canvas.Handle, Canvas.Font.Handle);
   SetTextColor(Canvas.Handle, ColorToRGB(Canvas.Font.Color));
   SetBkMode(Canvas.Handle, TRANSPARENT);
-  DrawText(Canvas.Handle, PChar(Format('%d  %s', [Index + 1,
-    Data.Speakers[Data.Messages[Index].Speaker].Name])), -1, TextBounds,
+  DrawText(Canvas.Handle, PChar(Format('%d  %s秒  %s', [Index + 1,
+    MineSecondsText(Data.Messages[Index].ShowMS), Data.Speakers[Data.Messages[Index].Speaker].Name])), -1, TextBounds,
     DT_SINGLELINE or DT_VCENTER or DT_NOPREFIX or DT_END_ELLIPSIS);
   Summary := Data.Messages[Index].Text.Replace(#13, ' ').Replace(#10, ' ');
   if Data.Messages[Index].PhotoFile <> '' then Summary := '写真  ' + Summary;
@@ -305,6 +305,8 @@ begin
       Reordered[Cursor] := Messages[I];
       Inc(Cursor);
     end;
+  // 発言の本文と演出を移動し、一覧各行の表示時刻はその行に残す。
+  for I := 0 to High(Messages) do Reordered[I].ShowMS := Messages[I].ShowMS;
   Messages := Reordered;
 end;
 

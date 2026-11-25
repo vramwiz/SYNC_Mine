@@ -15,7 +15,8 @@ uses
   SYNC_MusicStudio_DarkTheme, SYNC_MINE_Conversation, SYNC_MINE_CharacterIcons,
   SYNC_MINE_Renderer, SYNC_MINE_UserSettings, SYNC_MINE_DarkControls,
   ColorPickerColorMath, ColorPickerHueBar, ColorPickerSVArea, SYNC_MINE_PaletteEditor,
-  SYNC_MINE_MessageInput, SYNC_MINE_MessageList;
+  SYNC_MINE_MessageInput, SYNC_MINE_MessageList, SYNC_MINE_PhonePreview,
+  SYNC_MINE_Timeline, SYNC_MINE_TimingEditor;
 
 type
   TMineDeletedMessage = record
@@ -28,7 +29,6 @@ type
     FData: TMineConversation;
     FHistory: TMineCharacterHistory;
     FBuiltinNames: TStringList;
-    FRenderer: TMineRenderer;
     FPhoneColor: Cardinal;
     FLoading, FDirty, FNameNeedsApply: Boolean;
     FLayoutReady, FUpdatingLayout: Boolean;
@@ -44,7 +44,12 @@ type
     FPalette: TMinePaletteEditor;
     FMessageDetails: TPanel;
     FMessageAdd, FMessageDelete, FMessageUp, FMessageDown, FPhotoBrowse, FPhotoClear: TButton;
+    FBatchTiming: TButton;
     FSenderLabel, FTimeLabel, FPhotoLabel, FBodyLabel, FKeyboardHint: TLabel;
+    FShowTimeLabel, FAppearanceLabel: TLabel;
+    FShowTime: TEdit;
+    FAppearance: TComboBox;
+    FBatchSettings: TMineBatchTiming;
     FDeletedMessages: TArray<TMineDeletedMessage>;
     FCanUndoMessageDelete: Boolean;
     FClosedCommitted: Boolean;
@@ -54,9 +59,10 @@ type
     FTitle, FTime, FPhoto, FIconFile: TEdit;
     FText: TMineMessageMemo;
     FSender, FSide, FName, FOrientation: TComboBox;
-    FScale, FIconX, FIconY, FStage: TTrackBar;
-    FPreview, FIconPreview: TPaintBox;
-    FStageLabel, FStatus, FMessageHint, FNameLabel, FSideLabel, FIconFileLabel,
+    FScale, FIconX, FIconY, FPreviewTime: TTrackBar;
+    FPreview: TMinePhonePreview;
+    FIconPreview: TPaintBox;
+    FPreviewTimeLabel, FStatus, FMessageHint, FNameLabel, FSideLabel, FIconFileLabel,
       FScaleLabel, FIconXLabel, FIconYLabel, FIconFrameLabel, FIconColorLabel, FOrientationLabel: TLabel;
     FTimer: TTimer;
     FIconImage: TGPBitmap;
@@ -71,6 +77,11 @@ type
     procedure DrawMessage(Control: TWinControl; Index: Integer; Bounds: TRect; State: TOwnerDrawState);
     function SpeakerCaption(Index: Integer): string;
     procedure UpdateMessageHint;
+    procedure ApplyBatchTiming(Sender: TObject);
+    procedure ApplyMessageTime(Sender: TObject);
+    procedure ApplyAppearance(Sender: TObject);
+    procedure LoadMessageTiming(Index: Integer);
+    function NewMessageTime(Index: Integer): Integer;
     procedure BuildMessagePage(Parent: TWinControl);
     procedure BuildIconPage(Parent: TWinControl);
     procedure BuildSettingsPage(Parent: TWinControl);
@@ -87,7 +98,7 @@ type
     procedure ApplySelectedSpeaker(Sender: TObject);
     procedure MessageReordered(Sender: TObject; const Indices: TArray<Integer>; Destination: Integer);
     procedure FocusMessageBody;
-    procedure InsertMessageAt(Index: Integer; const Value: TMineMessage);
+    procedure InsertMessageAt(Index: Integer; const Value: TMineMessage; AssignTime: Boolean = True);
     procedure RemoveCurrentMessage(PreferPrevious: Boolean);
     procedure MessageInputCommand(Sender: TObject; Command: TMineMessageCommand; var Handled: Boolean);
     procedure MessageListKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
@@ -113,7 +124,8 @@ type
     function ChooseImage(out FileName: string): Boolean;
     procedure RefreshIcon;
     procedure PaintIcon(Sender: TObject);
-    procedure PaintPreview(Sender: TObject);
+    procedure PreviewMouseWheel(Sender: TObject; Shift: TShiftState; WheelDelta: Integer;
+      MousePos: TPoint; var Handled: Boolean);
     procedure PreviewChanged(Sender: TObject);
     procedure Tick(Sender: TObject);
     procedure CloseSettings(Sender: TObject);
@@ -198,12 +210,12 @@ end;
 
 procedure TFormMineSettings.UpdateMessageHint;
 var
-  I, Start: Integer;
+  I: Integer;
 begin
   I := FMessageList.ActiveIndex;
   if FMessageList.SelCount > 1 then
   begin
-    FMessageHint.Caption := Format('%d件選択中。発言者を一括変更・ドラッグで移動できます。', [FMessageList.SelCount]);
+    FMessageHint.Caption := Format('%d件選択中。「一括設定」でタイミングと演出を変更できます。', [FMessageList.SelCount]);
     Exit;
   end;
   if I < 0 then
@@ -211,9 +223,116 @@ begin
     FMessageHint.Caption := 'そのまま本文を入力できます。';
     Exit;
   end;
-  Start := I * 100;
-  FMessageHint.Caption := Format('発言 %d / %d　段階 %d〜%d → %d既読',
-    [I + 1, Length(FData.Messages), Start, Start + 99, Start + 100]);
+  FMessageHint.Caption := Format('発言 %d / %d', [I + 1, Length(FData.Messages)]);
+end;
+
+procedure TFormMineSettings.LoadMessageTiming(Index: Integer);
+var
+  Loading: Boolean;
+  Appearance: TMineAppearance;
+begin
+  Loading := FLoading;
+  FLoading := True;
+  try
+    FBatchTiming.Enabled := Length(FData.Messages) > 0;
+    FShowTime.Enabled := (Index >= 0) and (FMessageList.SelCount = 1);
+    FAppearance.Enabled := FShowTime.Enabled;
+    FShowTime.Clear;
+    FAppearance.Items.Clear;
+    if not FShowTime.Enabled then Exit;
+    FShowTime.Text := MineSecondsText(FData.Messages[Index].ShowMS);
+    FShowTime.Modified := False;
+    FAppearance.Items.AddStrings(['即表示', '短いフェード']);
+    if FData.Speakers[FData.Messages[Index].Speaker].Outgoing then
+      FAppearance.Items.Add('入力して送信');
+    Appearance := FData.Messages[Index].Appearance;
+    FAppearance.ItemIndex := Min(Ord(Appearance), FAppearance.Items.Count - 1);
+  finally
+    FLoading := Loading;
+  end;
+end;
+
+procedure TFormMineSettings.ApplyMessageTime(Sender: TObject);
+var
+  Index, ShowMS: Integer;
+begin
+  if FLoading or not FShowTime.Enabled or not FShowTime.Modified then Exit;
+  Index := FMessageList.ActiveIndex;
+  if Index < 0 then Exit;
+  FShowTime.Modified := False;
+  if not TryMineMilliseconds(FShowTime.Text, ShowMS) then
+  begin
+    FShowTime.Text := MineSecondsText(FData.Messages[Index].ShowMS);
+    MessageDlg('表示時刻には、0以上86400未満の秒数を入力してください。', mtError, [mbOK], 0);
+    Exit;
+  end;
+  FData.Messages[Index].ShowMS := ShowMS;
+  FShowTime.Text := MineSecondsText(ShowMS);
+  FPreviewTime.Max := MinePreviewLimit(FData);
+  FPreviewTime.Position := ShowMS + MINE_FADE_MS;
+  FDirty := True;
+end;
+
+procedure TFormMineSettings.ApplyAppearance(Sender: TObject);
+var
+  Index: Integer;
+begin
+  if FLoading or not FAppearance.Enabled or (FAppearance.ItemIndex < 0) then Exit;
+  Index := FMessageList.ActiveIndex;
+  if Index < 0 then Exit;
+  FData.Messages[Index].Appearance := TMineAppearance(FAppearance.ItemIndex);
+  FPreviewTime.Position := FData.Messages[Index].ShowMS;
+  FDirty := True;
+end;
+
+procedure TFormMineSettings.ApplyBatchTiming(Sender: TObject);
+var
+  Indices: TArray<Integer>;
+  Count, I, Index: Integer;
+begin
+  FBatchSettings.SelectedOnly := FMessageList.SelCount > 1;
+  if not EditMineTiming(FMessageList.SelCount, FBatchSettings) then Exit;
+  if FBatchSettings.SelectedOnly then Indices := FMessageList.SelectedIndices
+  else
+  begin
+    SetLength(Indices, Length(FData.Messages));
+    for I := 0 to High(Indices) do Indices[I] := I;
+  end;
+  Count := Length(Indices);
+  if Count = 0 then Exit;
+  if FBatchSettings.ChangeTimes and (FBatchSettings.StartMS +
+    Int64(Count - 1) * FBatchSettings.IntervalMS > MINE_MAX_MESSAGE_MS) then
+  begin
+    MessageDlg('最後の表示時刻が24時間を超えます。開始位置か発言間隔を短くしてください。', mtError, [mbOK], 0);
+    Exit;
+  end;
+  for I := 0 to High(Indices) do
+  begin
+    Index := Indices[I];
+    if FBatchSettings.ChangeTimes then
+      FData.Messages[Index].ShowMS := FBatchSettings.StartMS + I * FBatchSettings.IntervalMS;
+    if FBatchSettings.ChangeAppearance then
+      if FData.Speakers[FData.Messages[Index].Speaker].Outgoing then
+        FData.Messages[Index].Appearance := FBatchSettings.Outgoing
+      else FData.Messages[Index].Appearance := FBatchSettings.Incoming;
+  end;
+  FPreviewTime.Max := MinePreviewLimit(FData);
+  FPreviewTime.Position := FData.Messages[Indices[0]].ShowMS + MINE_FADE_MS;
+  LoadMessageTiming(FMessageList.ActiveIndex);
+  FMessageList.Invalidate;
+  FDirty := True;
+end;
+
+function TFormMineSettings.NewMessageTime(Index: Integer): Integer;
+var
+  Previous, Following: Integer;
+begin
+  if Length(FData.Messages) = 0 then Exit(MINE_FIRST_MESSAGE_MS);
+  if Index = 0 then Exit(Min(MINE_FIRST_MESSAGE_MS, FData.Messages[0].ShowMS div 2));
+  Previous := FData.Messages[Index - 1].ShowMS;
+  if Index >= Length(FData.Messages) then Exit(Min(MINE_MAX_MESSAGE_MS, Previous + MINE_MESSAGE_INTERVAL_MS));
+  Following := FData.Messages[Index].ShowMS;
+  Result := (Previous + Following) div 2;
 end;
 
 constructor TFormMineSettings.CreateForConversation(const JSON: string; Orientation: Integer;
@@ -225,11 +344,16 @@ var
 begin
   inherited CreateNew(nil);
   FData := TMineConversation.FromJSON(JSON);
+  FBatchSettings.StartMS := MINE_FIRST_MESSAGE_MS;
+  FBatchSettings.IntervalMS := MINE_MESSAGE_INTERVAL_MS;
+  FBatchSettings.ChangeTimes := True;
+  FBatchSettings.ChangeAppearance := True;
+  FBatchSettings.Outgoing := maTyping;
+  FBatchSettings.Incoming := maFade;
   FHistory := TMineCharacterHistory.Create;
   FHistory.Load;
   FBuiltinNames := TStringList.Create;
   MineCharacterNames(FBuiltinNames);
-  FRenderer := TMineRenderer.Create;
   FPhoneColor := PhoneColor;
   FLoading := True;
   Caption := 'MINE の設定';
@@ -270,18 +394,18 @@ begin
   FPreviewFooter.Height := 92;
   FPreviewFooter.BevelOuter := bvNone;
   ApplySyncMusicStudioDarkPanel(FPreviewFooter);
-  FStageLabel := LabelAt(FPreviewFooter, '段階 0', 0, 4);
-  FStage := SliderAt(FPreviewFooter, 0, 28, 336, 0, Max(100, Length(FData.Messages) * 100), 0);
-  FStage.Frequency := 100;
-  FStage.PageSize := 100;
-  FStage.OnChange := PreviewChanged;
+  FPreviewTimeLabel := LabelAt(FPreviewFooter, 'プレビュー 0.000 秒', 0, 4);
+  FPreviewTime := SliderAt(FPreviewFooter, 0, 28, 336, 0, MinePreviewLimit(FData), 0);
+  FPreviewTime.PageSize := 100;
+  FPreviewTime.OnChange := PreviewChanged;
   FStatus := LabelAt(FPreviewFooter, '', 0, 66);
   FStatus.AutoSize := False;
   FStatus.SetBounds(0, 66, 336, 24);
-  FPreview := TPaintBox.Create(Self);
+  FPreview := TMinePhonePreview.Create(Self);
   FPreview.Parent := FPreviewPanel;
   FPreview.Align := alClient;
-  FPreview.OnPaint := PaintPreview;
+  FPreview.ShowFrame(0, FPhoneColor);
+  OnMouseWheel := PreviewMouseWheel;
 
   EditorPanel := TPanel.Create(Self);
   EditorPanel.Parent := Self;
@@ -373,7 +497,7 @@ begin
   try
     FPreviewPanel.Width := Min(ScaleValue(360), Max(ScaleValue(180),
       ClientWidth - ScaleValue(660)));
-    FStage.Width := FPreviewFooter.ClientWidth;
+    FPreviewTime.Width := FPreviewFooter.ClientWidth;
     FStatus.Width := FPreviewFooter.ClientWidth;
     FMessageScroll.HorzScrollBar.Margin := ScaleValue(12);
     FMessageScroll.VertScrollBar.Margin := ScaleValue(12);
@@ -393,24 +517,25 @@ var
 begin
   Margin := ScaleValue(12);
   W := FMessageScroll.ClientWidth - Margin * 2;
-  H := Max(ScaleValue(420), FMessageScroll.ClientHeight - Margin * 2);
+  H := Max(ScaleValue(500), FMessageScroll.ClientHeight - Margin * 2);
   ListWidth := Min(ScaleValue(220), Max(ScaleValue(132), W div 3));
   RightWidth := Max(ScaleValue(160), W - ListWidth - Margin);
-  FMessageList.SetBounds(Margin, Margin, ListWidth, H - ScaleValue(76));
+  FMessageList.SetBounds(Margin, Margin, ListWidth, H - ScaleValue(114));
   FMessageList.ItemHeight := ScaleValue(48);
   FieldWidth := (ListWidth - ScaleValue(8)) div 2;
   FMessageAdd.SetBounds(Margin, FMessageList.BoundsRect.Bottom + ScaleValue(8), FieldWidth, ScaleValue(30));
   FMessageDelete.SetBounds(Margin + FieldWidth + ScaleValue(8), FMessageAdd.Top, FieldWidth, ScaleValue(30));
   FMessageUp.SetBounds(Margin, FMessageAdd.Top + ScaleValue(38), FieldWidth, ScaleValue(30));
   FMessageDown.SetBounds(FMessageDelete.Left, FMessageUp.Top, FieldWidth, ScaleValue(30));
+  FBatchTiming.SetBounds(Margin, FMessageUp.Top + ScaleValue(38), ListWidth, ScaleValue(30));
   FMessageDetails.SetBounds(Margin + ListWidth + Margin, Margin, RightWidth, H - ScaleValue(112));
   FSenderLabel.SetBounds(0, ScaleValue(4), ScaleValue(48), ScaleValue(20));
   FSender.SetBounds(ScaleValue(56), 0, RightWidth - ScaleValue(56), ScaleValue(28));
   FBodyLabel.SetBounds(0, ScaleValue(40), RightWidth, ScaleValue(20));
-  FText.SetBounds(0, ScaleValue(64), RightWidth, FMessageDetails.ClientHeight - ScaleValue(146));
+  FText.SetBounds(0, ScaleValue(64), RightWidth, FMessageDetails.ClientHeight - ScaleValue(224));
   MemoBottom := FText.BoundsRect.Bottom;
-  FTimeLabel.SetBounds(0, MemoBottom + ScaleValue(14), ScaleValue(48), ScaleValue(20));
-  FTime.SetBounds(ScaleValue(56), MemoBottom + ScaleValue(10), RightWidth - ScaleValue(56), ScaleValue(28));
+  FTimeLabel.SetBounds(0, MemoBottom + ScaleValue(14), ScaleValue(70), ScaleValue(20));
+  FTime.SetBounds(ScaleValue(76), MemoBottom + ScaleValue(10), RightWidth - ScaleValue(76), ScaleValue(28));
   FPhotoLabel.SetBounds(0, MemoBottom + ScaleValue(52), ScaleValue(48), ScaleValue(20));
   FPhoto.Visible := RightWidth >= ScaleValue(260);
   PhotoLeft := ScaleValue(56);
@@ -422,6 +547,10 @@ begin
   FieldWidth := Min(ScaleValue(54), (RightWidth - PhotoLeft - ScaleValue(8)) div 2);
   FPhotoBrowse.SetBounds(PhotoLeft, MemoBottom + ScaleValue(46), FieldWidth, ScaleValue(30));
   FPhotoClear.SetBounds(PhotoLeft + FieldWidth + ScaleValue(8), FPhotoBrowse.Top, FieldWidth, ScaleValue(30));
+  FShowTimeLabel.SetBounds(0, MemoBottom + ScaleValue(90), ScaleValue(70), ScaleValue(20));
+  FShowTime.SetBounds(ScaleValue(76), MemoBottom + ScaleValue(86), RightWidth - ScaleValue(76), ScaleValue(28));
+  FAppearanceLabel.SetBounds(0, MemoBottom + ScaleValue(128), ScaleValue(70), ScaleValue(20));
+  FAppearance.SetBounds(ScaleValue(76), MemoBottom + ScaleValue(124), RightWidth - ScaleValue(76), ScaleValue(28));
   FMessageHint.SetBounds(FMessageDetails.Left, FMessageDetails.BoundsRect.Bottom + ScaleValue(8), RightWidth, ScaleValue(40));
   FKeyboardHint.SetBounds(FMessageDetails.Left, FMessageHint.BoundsRect.Bottom + ScaleValue(4), RightWidth, ScaleValue(60));
 end;
@@ -524,7 +653,6 @@ destructor TFormMineSettings.Destroy;
 begin
   if FTimer <> nil then FTimer.Enabled := False;
   FIconImage.Free;
-  FRenderer.Free;
   FBuiltinNames.Free;
   FHistory.Free;
   inherited;
@@ -549,6 +677,7 @@ begin
   FMessageUp.Tag := -1;
   FMessageDown := ButtonAt(Parent, '下へ', 0, 0, 60, MoveMessage);
   FMessageDown.Tag := 1;
+  FBatchTiming := ButtonAt(Parent, '一括設定…', 0, 0, 100, ApplyBatchTiming);
   FMessageAdd.TabStop := False;
   FMessageDelete.TabStop := False;
   FMessageUp.TabStop := False;
@@ -562,7 +691,7 @@ begin
   FSender.OnChange := ApplySelectedSpeaker;
   FSender.Hint := 'Ctrl+1〜9で一覧順の発言者に切り替え、そのまま本文を入力できます。';
   FSender.ShowHint := True;
-  FTimeLabel := LabelAt(FMessageDetails, '時刻', 0, 0);
+  FTimeLabel := LabelAt(FMessageDetails, '画面時刻', 0, 0);
   FTime := EditAt(FMessageDetails, 0, 0, 100);
   FTime.MaxLength := 32;
   FTime.OnChange := MessageChanged;
@@ -571,6 +700,13 @@ begin
   FPhoto.ReadOnly := True;
   FPhotoBrowse := ButtonAt(FMessageDetails, '参照', 0, 0, 54, ChoosePhoto);
   FPhotoClear := ButtonAt(FMessageDetails, '解除', 0, 0, 54, ClearPhoto);
+  FShowTimeLabel := LabelAt(FMessageDetails, '表示 (秒)', 0, 0);
+  FShowTime := EditAt(FMessageDetails, 0, 0, 100);
+  FShowTime.MaxLength := 12;
+  FShowTime.OnExit := ApplyMessageTime;
+  FAppearanceLabel := LabelAt(FMessageDetails, '演出', 0, 0);
+  FAppearance := ComboAt(FMessageDetails, 0, 0, 100);
+  FAppearance.OnChange := ApplyAppearance;
   FBodyLabel := LabelAt(FMessageDetails, '本文', 0, 0);
   FText := TMineMessageMemo.Create(Self);
   FText.Parent := FMessageDetails;
@@ -587,6 +723,8 @@ begin
   FPhoto.TabOrder := 3;
   FPhotoBrowse.TabOrder := 4;
   FPhotoClear.TabOrder := 5;
+  FShowTime.TabOrder := 6;
+  FAppearance.TabOrder := 7;
   FMessageHint := LabelAt(Parent, '', 0, 0);
   FMessageHint.AutoSize := False;
   FMessageHint.WordWrap := True;
@@ -758,12 +896,17 @@ begin
       if FMessageList.Items.Count > 0 then FMessageList.TopIndex := Min(PreviousTop, FMessageList.Items.Count - 1);
     end
     else FMessageList.SelectOnly(Min(Max(0, Index), High(FData.Messages)));
-    FStage.Max := Max(100, Length(FData.Messages) * 100);
+    FPreviewTime.Max := MinePreviewLimit(FData);
   finally
     FMessageList.Items.EndUpdate;
     FLoading := False;
   end;
-  if PreserveSelection then UpdateMessageHint else LoadMessage(nil);
+  if PreserveSelection then
+  begin
+    UpdateMessageHint;
+    LoadMessageTiming(Index);
+  end
+  else LoadMessage(nil);
   FDirty := True;
 end;
 
@@ -799,9 +942,10 @@ begin
   FText.Perform(EM_SCROLLCARET, 0, 0);
 end;
 
-procedure TFormMineSettings.InsertMessageAt(Index: Integer; const Value: TMineMessage);
+procedure TFormMineSettings.InsertMessageAt(Index: Integer; const Value: TMineMessage; AssignTime: Boolean);
 var
   I, Count: Integer;
+  Message: TMineMessage;
 begin
   Count := Length(FData.Messages);
   if Count >= MINE_MAX_MESSAGES then
@@ -810,9 +954,11 @@ begin
     Exit;
   end;
   Index := EnsureRange(Index, 0, Count);
+  Message := Value;
+  if AssignTime then Message.ShowMS := NewMessageTime(Index);
   SetLength(FData.Messages, Count + 1);
   for I := Count downto Index + 1 do FData.Messages[I] := FData.Messages[I - 1];
-  FData.Messages[Index] := Value;
+  FData.Messages[Index] := Message;
   FCanUndoMessageDelete := False;
   RefreshMessageList(Index);
   FocusMessageBody;
@@ -906,7 +1052,7 @@ begin
         if not Handled then Exit;
         Deleted := FDeletedMessages[High(FDeletedMessages)];
         SetLength(FDeletedMessages, Length(FDeletedMessages) - 1);
-        InsertMessageAt(Deleted.Index, Deleted.Value);
+        InsertMessageAt(Deleted.Index, Deleted.Value, False);
         FCanUndoMessageDelete := Length(FDeletedMessages) > 0;
       end;
   end;
@@ -977,7 +1123,7 @@ begin
       if Length(Selection) > 0 then FMessageList.SetSelection(Selection, MessageIndex)
       else FMessageList.SelectOnly(Min(MessageIndex, High(FData.Messages)));
       FSpeakerList.ItemIndex := EnsureRange(SpeakerIndex, 0, High(FData.Speakers));
-      FStage.Max := Max(100, Length(FData.Messages) * 100);
+      FPreviewTime.Max := MinePreviewLimit(FData);
     finally
       FSpeakerList.Items.EndUpdate;
       FMessageList.Items.EndUpdate;
@@ -1015,7 +1161,7 @@ begin
     FPhoto.Clear;
     FTime.Clear;
     FSender.ItemIndex := Min(Speaker, High(FData.Speakers));
-    FStage.Position := 0;
+    FPreviewTime.Position := 0;
     if I >= 0 then
     begin
       FText.Text := FData.Messages[I].Text;
@@ -1030,8 +1176,8 @@ begin
           Break;
         end;
       if (FData.Messages[I].Text.Trim = '') and (FData.Messages[I].PhotoFile = '') then
-        FStage.Position := I * 100
-      else FStage.Position := (I + 1) * 100;
+        FPreviewTime.Position := Max(0, FData.Messages[I].ShowMS - 1)
+      else FPreviewTime.Position := FData.Messages[I].ShowMS + MINE_FADE_MS;
     end;
     FPhoto.Hint := FPhoto.Text;
     FPhoto.ShowHint := True;
@@ -1041,6 +1187,7 @@ begin
     FLoading := False;
   end;
   UpdateMessageHint;
+  LoadMessageTiming(I);
   FPreview.Invalidate;
 end;
 
@@ -1070,7 +1217,7 @@ end;
 
 procedure TFormMineSettings.MessageChanged(Sender: TObject);
 var
-  I: Integer;
+  I, ShowMS: Integer;
 begin
   if FLoading or (FMessageList.SelCount > 1) then Exit;
   I := FMessageList.ActiveIndex;
@@ -1079,14 +1226,17 @@ begin
   begin
     I := Length(FData.Messages);
     if I >= MINE_MAX_MESSAGES then Exit;
+    ShowMS := NewMessageTime(I);
     SetLength(FData.Messages, I + 1);
     FData.Messages[I] := Default(TMineMessage);
     FData.Messages[I].Speaker := Max(0, FSender.ItemIndex);
+    FData.Messages[I].ShowMS := ShowMS;
     FMessageList.Items.Add('');
     FMessageList.SelectOnly(I);
     FTime.Enabled := True;
-    FStage.Max := Max(100, Length(FData.Messages) * 100);
-    FStage.Position := (I + 1) * 100;
+    FPreviewTime.Max := MinePreviewLimit(FData);
+    FPreviewTime.Position := ShowMS + MINE_FADE_MS;
+    LoadMessageTiming(I);
   end;
   if I >= 0 then
   begin
@@ -1095,9 +1245,9 @@ begin
     FData.Messages[I].TimeText := FTime.Text;
     FMessageList.Items[I] := MessageCaption(I);
     FMessageList.SelectOnly(I);
-    if (FStage.Position <= I * 100) and
+    if (FPreviewTime.Position < FData.Messages[I].ShowMS) and
       ((Trim(FText.Text) <> '') or (FData.Messages[I].PhotoFile <> '')) then
-      FStage.Position := (I + 1) * 100;
+      FPreviewTime.Position := FData.Messages[I].ShowMS + MINE_FADE_MS;
   end;
   FPhoto.Hint := FPhoto.Text;
   FPhotoBrowse.Hint := FPhoto.Text;
@@ -1148,7 +1298,7 @@ end;
 
 procedure TFormMineSettings.MoveMessage(Sender: TObject);
 var
-  I, J: Integer;
+  I, J, ShowMS: Integer;
   Message: TMineMessage;
 begin
   if FMessageList.SelCount > 1 then Exit;
@@ -1156,7 +1306,10 @@ begin
   J := I + TButton(Sender).Tag;
   if (I < 0) or (J < 0) or (J >= Length(FData.Messages)) then Exit;
   Message := FData.Messages[I];
+  ShowMS := Message.ShowMS;
+  Message.ShowMS := FData.Messages[J].ShowMS;
   FData.Messages[I] := FData.Messages[J];
+  FData.Messages[I].ShowMS := ShowMS;
   FData.Messages[J] := Message;
   FCanUndoMessageDelete := False;
   RefreshMessageList(J);
@@ -1401,64 +1554,24 @@ begin
   end;
 end;
 
-procedure TFormMineSettings.PaintPreview(Sender: TObject);
-var
-  Buffer: TBitmap;
-  Target: TGPGraphics;
-  W, H, X, Y, CellSize, Margin: Integer;
-  Ratio: Double;
+procedure TFormMineSettings.PreviewMouseWheel(Sender: TObject; Shift: TShiftState;
+  WheelDelta: Integer; MousePos: TPoint; var Handled: Boolean);
 begin
-  if FPreview.ClientRect.IsEmpty then Exit;
-  Buffer := TBitmap.Create;
-  try
-    Buffer.SetSize(FPreview.Width, FPreview.Height);
-    CellSize := Max(1, ScaleValue(16));
-    Margin := ScaleValue(20);
-    for Y := 0 to (Buffer.Height - 1) div CellSize do
-      for X := 0 to (Buffer.Width - 1) div CellSize do
-      begin
-        if Odd(X + Y) then Buffer.Canvas.Brush.Color := $00353535
-        else Buffer.Canvas.Brush.Color := $003D3D3D;
-        Buffer.Canvas.FillRect(Rect(X * CellSize, Y * CellSize,
-          (X + 1) * CellSize, (Y + 1) * CellSize));
-      end;
-    MinePhoneSize(FOrientation.ItemIndex, W, H);
-    Ratio := Min(Max(1, FPreview.Width - Margin) / W,
-      Max(1, FPreview.Height - Margin) / H);
-    W := Max(1, Round(W * Ratio));
-    H := Max(1, Round(H * Ratio));
-    X := (FPreview.Width - W) div 2;
-    Y := (FPreview.Height - H) div 2;
-    Target := TGPGraphics.Create(Buffer.Canvas.Handle);
-    try
-      FRenderer.Draw(Target, Rect(X, Y, X + W, Y + H), FStage.Position, FPhoneColor);
-    finally
-      Target.Free;
-    end;
-    FPreview.Canvas.Draw(0, 0, Buffer);
-  finally
-    Buffer.Free;
-  end;
+  Handled := FPreview.ZoomAt(FPreview.ScreenToClient(MousePos), WheelDelta);
 end;
 
 procedure TFormMineSettings.PreviewChanged(Sender: TObject);
 var
-  I, Step: Integer;
+  Visible: Integer;
+  Message: TMineMessage;
 begin
-  FStageLabel.Caption := Format('段階 %d / %d', [FStage.Position, Length(FData.Messages) * 100]);
-  I := FStage.Position div 100;
-  Step := FStage.Position mod 100;
-  if FStage.Position = 0 then FStatus.Caption := '会話なし'
-  else if Step = 0 then FStatus.Caption := Format('%d件目が既読', [I])
-  else if I < Length(FData.Messages) then
-  begin
-    if FData.Speakers[FData.Messages[I].Speaker].Outgoing then
-      if Step <= 85 then FStatus.Caption := Format('%d件目：自分が入力中', [I + 1])
-      else FStatus.Caption := Format('%d件目：自分が送信中', [I + 1])
-    else FStatus.Caption := Format('%d件目：相手から受信中', [I + 1]);
-  end;
+  FPreviewTimeLabel.Caption := 'プレビュー ' + MineSecondsText(FPreviewTime.Position) + ' 秒';
+  Visible := 0;
+  for Message in FData.Messages do
+    if Message.ShowMS <= FPreviewTime.Position then Inc(Visible);
+  FStatus.Caption := Format('%d / %d 件表示', [Visible, Length(FData.Messages)]);
   if Sender = FOrientation then FDirty := True;
-  FPreview.Invalidate;
+  FPreview.ShowFrame(FPreviewTime.Position, FPhoneColor);
 end;
 
 procedure TFormMineSettings.Tick(Sender: TObject);
@@ -1466,7 +1579,7 @@ begin
   if not FDirty then Exit;
   FDirty := False;
   try
-    FRenderer.Prepare(FData, FOrientation.ItemIndex);
+    FPreview.Prepare(FData, FOrientation.ItemIndex);
     PreviewChanged(nil);
   except
     on E: Exception do FStatus.Caption := E.Message;
@@ -1484,6 +1597,7 @@ begin
   if CanClose then Exit;
   try
     CharacterNameExit(nil);
+    ApplyMessageTime(nil);
     FData.Validate;
     if FNameNeedsApply then Exit;
     FResultJSON := FData.ToJSON;

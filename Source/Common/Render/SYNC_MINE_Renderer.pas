@@ -1,6 +1,6 @@
 ﻿unit SYNC_MINE_Renderer;
 
-// スマホ・会話・画像を透明面へ描く。段階だけから表示とスクロールを計算する。
+// スマホ・会話・画像を透明面へ描く。時刻から表示とスクロールを計算する。
 
 interface
 
@@ -28,17 +28,15 @@ type
     destructor Destroy; override;
     // データ変更時と方向変更時だけ文字を測り、画像参照キャッシュを更新する。
     procedure Prepare(const Data: TMineConversation; Orientation: Integer);
-    procedure Draw(Target: TGPGraphics; const Destination: TRect; Stage: Double;
+    procedure Draw(Target: TGPGraphics; const Destination: TRect; TimeMS: Double;
       PhoneColor: ARGB);
-    // 返す画像は描画器が所有し、次の呼出しまで有効。Clipped は映像内の範囲。
-    function RenderSurface(const Destination, Clipped: TRect; Stage: Double;
-      PhoneColor: ARGB): TGPBitmap;
+    // 返す画像は描画器が所有し、次の呼出しまで有効。
+    function RenderSurface(TimeMS: Double; PhoneColor: ARGB): TGPBitmap;
   end;
 
 function StartMineGraphics: Boolean;
 procedure StopMineGraphics;
 procedure MinePhoneSize(Orientation: Integer; out Width, Height: Integer);
-function MinePhoneBounds(Width, Height, Orientation: Integer; X, Y, Scale: Double): TRect;
 // ファイルを開いたままにせず縮小複製する。失敗時はnilを返す。
 function LoadMinePicture(const FileName: string): TGPBitmap;
 // アイコン枠を画像で埋め、倍率と枠に対する百分率の位置補正を適用する。
@@ -49,7 +47,7 @@ procedure DrawMineIcon(Target: TGPGraphics; Image: TGPBitmap; const Bounds: TGPR
 implementation
 
 uses
-  System.Math, System.SysUtils, Winapi.Windows, SYNC_MINE_CharacterIcons;
+  System.Math, System.SysUtils, Winapi.Windows, SYNC_MINE_CharacterIcons, SYNC_MINE_Timeline;
 
 var
   GraphicsToken: ULONG_PTR;
@@ -83,18 +81,6 @@ begin
     Width := 420;
     Height := 820;
   end;
-end;
-
-function MinePhoneBounds(Width, Height, Orientation: Integer; X, Y, Scale: Double): TRect;
-var
-  W, H: Integer;
-begin
-  MinePhoneSize(Orientation, W, H);
-  Scale := EnsureRange(Scale, 0.0, 10.0);
-  X := Width / 2 + EnsureRange(X, -32768.0, 32768.0);
-  Y := Height / 2 + EnsureRange(Y, -32768.0, 32768.0);
-  Result := Rect(Round(X - W * Scale / 2), Round(Y - H * Scale / 2),
-    Round(X + W * Scale / 2), Round(Y + H * Scale / 2));
 end;
 
 function LoadMinePicture(const FileName: string): TGPBitmap;
@@ -276,16 +262,15 @@ var
   Image: TGPBitmap;
 begin
   Data.Validate;
-  FData := Data;
+  FData := OrderedMineConversation(Data);
   // 配列はフォームが更新するため、アイコンの補完パスは描画器側の複製へ書く。
   FData.Speakers := Copy(Data.Speakers);
-  FData.Messages := Copy(Data.Messages);
   FPictures.Clear;
   MinePhoneSize(Orientation, FWidth, FHeight);
   for I := 0 to High(FData.Speakers) do
     if FData.Speakers[I].CharacterName <> '' then
       FData.Speakers[I].IconFile := MineCharacterIconFile(FData.Speakers[I].CharacterName);
-  SetLength(FRows, Length(Data.Messages));
+  SetLength(FRows, Length(FData.Messages));
   Surface := TGPBitmap.Create(1, 1);
   Target := TGPGraphics.Create(Surface);
   Format := TGPStringFormat.Create;
@@ -297,16 +282,16 @@ begin
       FRows[I] := Default(TRow);
       TextHeight := 0;
       FRows[I].Width := 54;
-      if Data.Messages[I].Text <> '' then
+      if FData.Messages[I].Text <> '' then
       begin
-        Target.MeasureString(Data.Messages[I].Text, Length(Data.Messages[I].Text), FBodyFont,
+        Target.MeasureString(FData.Messages[I].Text, Length(FData.Messages[I].Text), FBodyFont,
           MakeRect(Single(0), Single(0), MaxWidth - 24, Single(200000)), Format, TextBounds);
         FRows[I].Width := Min(MaxWidth, Max(54, Ceil(TextBounds.Width) + 24));
         TextHeight := Ceil(TextBounds.Height);
       end;
-      if Data.Messages[I].PhotoFile <> '' then
+      if FData.Messages[I].PhotoFile <> '' then
       begin
-        Image := Picture(Data.Messages[I].PhotoFile);
+        Image := Picture(FData.Messages[I].PhotoFile);
         FRows[I].Width := MaxWidth;
         if Image <> nil then FRows[I].PhotoHeight := Min(260, (MaxWidth - 12) * Image.GetHeight / Image.GetWidth)
         else FRows[I].PhotoHeight := 100;
@@ -315,7 +300,7 @@ begin
       FRows[I].BubbleHeight := Max(42, TextHeight + 18 + FRows[I].PhotoHeight);
       FRows[I].Top := Top;
       FRows[I].Height := FRows[I].BubbleHeight + 32;
-      if not Data.Speakers[Data.Messages[I].Speaker].Outgoing then
+      if not FData.Speakers[FData.Messages[I].Speaker].Outgoing then
         FRows[I].Height := FRows[I].Height + 20;
       Top := Top + FRows[I].Height;
     end;
@@ -414,30 +399,17 @@ begin
   end;
 end;
 
-function DraftPrefix(const Text: string; Phase: Single): string;
-var
-  Units: Integer;
-begin
-  Units := Min(Length(Text), Ceil(Length(Text) * EnsureRange(Phase, 0.0, 1.0)));
-  // 絵文字などのUTF-16サロゲートペアの途中を入力済みとしない。
-  if (Units > 0) and (Units < Length(Text)) and
-    (Ord(Text[Units]) >= $D800) and (Ord(Text[Units]) <= $DBFF) then Dec(Units);
-  Result := Copy(Text, 1, Units).Replace(#13, ' ').Replace(#10, ' ');
-end;
-
-procedure TMineRenderer.Draw(Target: TGPGraphics; const Destination: TRect; Stage: Double;
+procedure TMineRenderer.Draw(Target: TGPGraphics; const Destination: TRect; TimeMS: Double;
   PhoneColor: ARGB);
 var
   State, ClipState: GraphicsState;
   Screen: TGPGraphicsPath;
   Pen: TGPPen;
-  I, Complete: Integer;
-  Phase, Reveal, Scroll, Previous, Following, ChatHeight, Y, DraftX,
+  I, Visible, TypingDuration, CharacterCount: Integer;
+  TypingProgress, Reveal, Scroll, RowBottom, ChatHeight, Y, DraftX,
     DraftRatio, DraftWidth, DraftHeight: Single;
-  DraftActive: Boolean;
   DraftText: string;
   DraftImage: TGPBitmap;
-  DraftAlpha: Cardinal;
 begin
   if Destination.IsEmpty or (FWidth = 0) then Exit;
   State := Target.Save;
@@ -474,27 +446,20 @@ begin
     ClipState := Target.Save;
     try
       Target.SetClip(MakeRect(Single(14), Single(124), Single(FWidth - 28), ChatHeight), CombineModeIntersect);
-      Stage := EnsureRange(Stage, 0.0, Length(FRows) * 100.0) / 100;
-      Complete := Floor(Stage);
-      Phase := Stage - Complete;
-      DraftActive := (Complete < Length(FRows)) and
-        FData.Speakers[FData.Messages[Complete].Speaker].Outgoing;
-      // 99でメッセージの出現を完了し、100の1段階で既読へ進める。
-      // 自分側はまず入力し、最後の15段階で送信する。AviUtl2の補間値をそのまま使う。
-      if DraftActive then Reveal := EnsureRange((Phase - 0.85) / 0.14, 0.0, 1.0)
-      else Reveal := Min(1.0, Phase / 0.99);
-      Previous := 0;
-      if Complete > 0 then Previous := FRows[Complete - 1].Top + FRows[Complete - 1].Height;
-      Following := Previous;
-      if Complete < Length(FRows) then Following := FRows[Complete].Top + FRows[Complete].Height;
-      Scroll := Max(0, Previous - ChatHeight + 8) * (1 - Reveal) + Max(0, Following - ChatHeight + 8) * Reveal;
-      for I := 0 to Min(Complete, High(FRows)) do
+      Visible := MineVisibleCount(FData, TimeMS);
+      Scroll := 0;
+      for I := 0 to Visible - 1 do
       begin
-        if (I = Complete) and (Reveal <= 0) then Break;
+        RowBottom := Max(0, FRows[I].Top + FRows[I].Height - ChatHeight + 8);
+        Scroll := Scroll + (RowBottom - Scroll) * MineReveal(FData.Messages[I], TimeMS);
+      end;
+      for I := 0 to Visible - 1 do
+      begin
         Y := 124 + FRows[I].Top - Scroll;
         if (Y + FRows[I].Height < 124) or (Y > 124 + ChatHeight) then Continue;
-        if I < Complete then DrawRow(Target, I, Y, 1, True)
-        else DrawRow(Target, I, Y, Reveal, False);
+        Reveal := MineReveal(FData.Messages[I], TimeMS);
+        if Reveal > 0 then DrawRow(Target, I, Y, Reveal,
+          TimeMS >= FData.Messages[I].ShowMS + MINE_READ_MS);
       end;
     finally
       Target.Restore(ClipState);
@@ -502,32 +467,35 @@ begin
     FillRound(Target, 14, FHeight - 92, FWidth - 28, 74, 1, $FFF5F7F9);
     TextAt(Target, '+', FHeaderFont, 27, FHeight - 82, 30, 34, $FF596875);
     FillRound(Target, 62, FHeight - 82, FWidth - 122, 36, 18, $FFFFFFFF);
-    if DraftActive and (Phase > 0) and (Phase < 0.99) then
+    TypingDuration := 0;
+    if Visible < Length(FData.Messages) then TypingDuration := MineTypingDuration(FData, Visible);
+    if (TypingDuration > 0) and (TimeMS >= FData.Messages[Visible].ShowMS - TypingDuration) then
     begin
-      DraftAlpha := Cardinal(Round(255 * (1 - Reveal))) shl 24;
-      DraftText := DraftPrefix(FData.Messages[Complete].Text, Phase / 0.85);
+      TypingProgress := (TimeMS - (FData.Messages[Visible].ShowMS - TypingDuration)) / TypingDuration;
+      DraftText := MineTypingText(FData.Messages[Visible].Text);
+      CharacterCount := MineCharacterCount(DraftText);
+      DraftText := MineTypedPrefix(DraftText, Floor(TypingProgress * CharacterCount) + 1);
       DraftX := 77;
-      if FData.Messages[Complete].PhotoFile <> '' then
+      if FData.Messages[Visible].PhotoFile <> '' then
       begin
-        DraftImage := Picture(FData.Messages[Complete].PhotoFile);
+        DraftImage := Picture(FData.Messages[Visible].PhotoFile);
         if DraftImage <> nil then
         begin
           DraftRatio := Min(30 / DraftImage.GetWidth, 24 / DraftImage.GetHeight);
           DraftWidth := DraftImage.GetWidth * DraftRatio;
           DraftHeight := DraftImage.GetHeight * DraftRatio;
           DrawPicture(Target, DraftImage, MakeRect(70 + (30 - DraftWidth) / 2,
-            FHeight - 76 + (24 - DraftHeight) / 2, DraftWidth, DraftHeight), DraftAlpha shr 24);
+            FHeight - 76 + (24 - DraftHeight) / 2, DraftWidth, DraftHeight), 255);
         end;
         DraftX := 110;
         if DraftText = '' then DraftText := '写真を準備中…';
       end;
       if DraftText = '' then DraftText := '入力中…';
       TextAt(Target, DraftText, FBodyFont, DraftX, FHeight - 80,
-        FWidth - DraftX - 68, 30, DraftAlpha or $00273C32);
-      FillRound(Target, 77, FHeight - 49, (FWidth - 155) * Min(1, Phase / 0.85),
-        2, 1, DraftAlpha or $0059B879);
-      FillRound(Target, FWidth - 52, FHeight - 78, 28, 28, 14, DraftAlpha or $0059B879);
-      Pen := TGPPen.Create(DraftAlpha or $00FFFFFF, 2);
+        FWidth - DraftX - 68, 30, $FF273C32);
+      FillRound(Target, 77, FHeight - 49, (FWidth - 155) * TypingProgress, 2, 1, $FF59B879);
+      FillRound(Target, FWidth - 52, FHeight - 78, 28, 28, 14, $FF59B879);
+      Pen := TGPPen.Create($FFFFFFFF, 2);
       try
         Target.DrawLine(Pen, FWidth - 38, FHeight - 57, FWidth - 38, FHeight - 70);
         Target.DrawLine(Pen, FWidth - 43, FHeight - 65, FWidth - 38, FHeight - 70);
@@ -545,25 +513,20 @@ begin
   end;
 end;
 
-function TMineRenderer.RenderSurface(const Destination, Clipped: TRect; Stage: Double;
-  PhoneColor: ARGB): TGPBitmap;
+function TMineRenderer.RenderSurface(TimeMS: Double; PhoneColor: ARGB): TGPBitmap;
 var
   Target: TGPGraphics;
-  Local: TRect;
 begin
-  if Destination.IsEmpty or Clipped.IsEmpty then Exit(nil);
-  if (FSurface = nil) or (Integer(FSurface.GetWidth) <> Clipped.Width) or
-    (Integer(FSurface.GetHeight) <> Clipped.Height) then
+  if (FSurface = nil) or (Integer(FSurface.GetWidth) <> FWidth) or
+    (Integer(FSurface.GetHeight) <> FHeight) then
   begin
     FreeAndNil(FSurface);
-    FSurface := TGPBitmap.Create(Clipped.Width, Clipped.Height, PixelFormat32bppPARGB);
+    FSurface := TGPBitmap.Create(FWidth, FHeight, PixelFormat32bppARGB);
   end;
   Target := TGPGraphics.Create(FSurface);
   try
     Target.Clear(0);
-    Local := Destination;
-    Local.Offset(-Clipped.Left, -Clipped.Top);
-    Draw(Target, Local, Stage, PhoneColor);
+    Draw(Target, Rect(0, 0, FWidth, FHeight), TimeMS, PhoneColor);
   finally
     Target.Free;
   end;

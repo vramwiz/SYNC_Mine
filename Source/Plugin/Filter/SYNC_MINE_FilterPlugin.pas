@@ -1,44 +1,48 @@
 ﻿unit SYNC_MINE_FilterPlugin;
 
-// 標準パラメータ、会話の確定、オブジェクト画像へのスマホ合成を接続する。
+// メディアオブジェクトにスマホの透過映像と会話の生成音を渡す。
 
 interface
 
 uses
   AviUtl2FilterTypes;
 
+const MINE_REQUIRED_VERSION = 2011600;
+
 function GetMineFilterTable: PFILTER_PLUGIN_TABLE;
 
 implementation
 
 uses
-  System.Math, System.SyncObjs, System.SysUtils, System.Types, System.UITypes,
+  System.Math, System.SyncObjs, System.SysUtils, System.UITypes,
   Winapi.GDIPAPI, Winapi.GDIPOBJ, Vcl.Dialogs, PluginFilterTable,
-  SYNC_MINE_Conversation, SYNC_MINE_Renderer, SYNC_MINE_SettingsForm;
+  SYNC_MINE_Conversation, SYNC_MINE_Renderer, SYNC_MINE_Audio, SYNC_MINE_SettingsForm;
 
 const
   EFFECT_NAME = 'MINE';
   DATA_ITEM_NAME = '会話データ';
 
 type
-  TMineVideoSession = class
+  TMineSession = class
   private
-    FLock: TCriticalSection;
+    FVideoLock, FAudioLock: TCriticalSection;
     FRenderer: TMineRenderer;
-    FInput: TArray<TPIXEL_RGBA>;
-    FJSON: string;
+    FAudio: TMineAudio;
+    FPixels: TArray<TPIXEL_RGBA>;
+    FSamples: TArray<Single>;
+    FVideoJSON, FAudioJSON: string;
     FOrientation: Integer;
-    FPrepared: Boolean;
-    function Composite(Image: TGPBitmap; const Bounds: TRect; Width, Opacity: Integer): Boolean;
+    FVideoPrepared, FAudioPrepared: Boolean;
   public
     constructor Create;
     destructor Destroy; override;
-    procedure Render(Video: PFILTER_PROC_VIDEO);
+    function RenderVideo(Video: PFILTER_PROC_VIDEO): Byte;
+    function RenderAudio(Audio: PFILTER_PROC_AUDIO): Byte;
   end;
 
 var
   SettingsButton: TFILTER_ITEM_BUTTON;
-  XItem, YItem, ScaleItem, TransparencyItem, StageItem: TFILTER_ITEM_TRACK;
+  VolumeItem: TFILTER_ITEM_TRACK;
   OrientationItem: TFILTER_ITEM_SELECT;
   OrientationOptions: array[0..2] of TFILTER_ITEM_SELECT_ITEM;
   PhoneColorItem: TFILTER_ITEM_COLOR;
@@ -46,11 +50,10 @@ var
   StorageGroup: TFILTER_ITEM_GROUP;
   PluginTableInitialized: Boolean;
 
-procedure SettingsButtonCallback(Edit: PEDIT_SECTION); cdecl;
+procedure SettingsButtonCallback(Edit: PEDIT_SECTION; Obj: OBJECT_HANDLE; Effect, Item: PWideChar); cdecl;
 const
   Names: array[0..2] of string = ('会話データ', 'スマホの方向', 'スマホの色');
 var
-  Obj: OBJECT_HANDLE;
   Original, Values: array[0..2] of string;
   JSON, ColorText: string;
   PhoneColor, OriginalPhoneColor: Cardinal;
@@ -61,7 +64,7 @@ var
   var
     Value: PAnsiChar;
   begin
-    Value := Edit^.GetObjectItemValue(Obj, EFFECT_NAME, PWideChar(Name));
+    Value := Edit^.GetObjectItemValue(Obj, Effect, PWideChar(Name));
     if Value = nil then raise Exception.CreateFmt('「%s」を取得できませんでした。', [Name]);
     Result := string(UTF8String(Value));
   end;
@@ -99,19 +102,15 @@ var
     Encoded: UTF8String;
   begin
     Encoded := UTF8String(Value);
-    Result := Edit^.SetObjectItemValue(Obj, EFFECT_NAME, PWideChar(Names[Index]), PAnsiChar(Encoded));
+    Result := Edit^.SetObjectItemValue(Obj, Effect, PWideChar(Names[Index]), PAnsiChar(Encoded));
     if Result then Result := SameValue(Index, ReadItem(Names[Index]), Value);
   end;
 
 begin
   try
-    if (Edit = nil) or not Assigned(Edit^.GetFocusObject) or
+    if (Edit = nil) or (Obj = nil) or (Effect = nil) or
       not Assigned(Edit^.GetObjectItemValue) or not Assigned(Edit^.SetObjectItemValue) then
       raise Exception.Create('AviUtl2の編集APIを取得できませんでした。');
-    Obj := Edit^.GetFocusObject;
-    if Obj = nil then raise Exception.Create('MINEを配置したオブジェクトを選択してください。');
-    if Assigned(Edit^.CountObjectEffect) and (Edit^.CountObjectEffect(Obj, EFFECT_NAME) <> 1) then
-      raise Exception.Create('設定対象にはMINEを1つ配置してください。');
     for I := 0 to High(Names) do Original[I] := ReadItem(Names[I]);
     JSON := Original[0];
     Orientation := Max(0, DirectionValue(Original[1]));
@@ -152,111 +151,133 @@ begin
       end;
   end;
 end;
-constructor TMineVideoSession.Create;
+constructor TMineSession.Create;
 begin
   inherited;
-  FLock := TCriticalSection.Create;
+  FVideoLock := TCriticalSection.Create;
+  FAudioLock := TCriticalSection.Create;
   FRenderer := TMineRenderer.Create;
+  FAudio := TMineAudio.Create;
 end;
 
-destructor TMineVideoSession.Destroy;
+destructor TMineSession.Destroy;
 begin
+  FAudio.Free;
   FRenderer.Free;
-  FLock.Free;
+  FAudioLock.Free;
+  FVideoLock.Free;
   inherited;
 end;
 
-function TMineVideoSession.Composite(Image: TGPBitmap; const Bounds: TRect;
-  Width, Opacity: Integer): Boolean;
+function TMineSession.RenderVideo(Video: PFILTER_PROC_VIDEO): Byte;
 var
-  Data: TBitmapData;
+  BitmapData: TBitmapData;
   Source: PByte;
   Target: PPIXEL_RGBA;
-  X, Y, Alpha, Inverse: Integer;
-begin
-  Result := False;
-  if Image.LockBits(MakeRect(0, 0, Bounds.Width, Bounds.Height), ImageLockModeRead,
-    PixelFormat32bppPARGB, Data) <> Ok then Exit;
-  try
-    for Y := Bounds.Top to Bounds.Bottom - 1 do
-    begin
-      Source := PByte(NativeInt(Data.Scan0) + NativeInt(Y - Bounds.Top) * Data.Stride);
-      Target := @FInput[Y * Width + Bounds.Left];
-      for X := Bounds.Left to Bounds.Right - 1 do
-      begin
-        Alpha := (Source[3] * Opacity + 127) div 255;
-        if Alpha > 0 then
-        begin
-          Result := True;
-          Inverse := 255 - Alpha;
-          Target^.R := Min(255, (Source[2] * Opacity + Target^.R * Inverse + 127) div 255);
-          Target^.G := Min(255, (Source[1] * Opacity + Target^.G * Inverse + 127) div 255);
-          Target^.B := Min(255, (Source[0] * Opacity + Target^.B * Inverse + 127) div 255);
-          Target^.A := Min(255, Alpha + (Target^.A * Inverse + 127) div 255);
-        end;
-        Inc(Source, 4);
-        Inc(Target);
-      end;
-    end;
-  finally
-    Image.UnlockBits(Data);
-  end;
-end;
-
-procedure TMineVideoSession.Render(Video: PFILTER_PROC_VIDEO);
-var
-  Width, Height, Orientation, Opacity: Integer;
+  X, Y, Width, Height, Orientation: Integer;
   JSON: string;
-  Bounds, Clipped: TRect;
   Image: TGPBitmap;
   PhoneColor: ARGB;
 begin
-  Width := Video^.Object_^.Width;
-  Height := Video^.Object_^.Height;
-  if (Width <= 0) or (Height <= 0) or (Width > 8192) or (Height > 8192) or
-    (Int64(Width) * Height > 33554432) or not Assigned(Video^.GetImageData) or
-    not Assigned(Video^.SetImageData) then Exit;
-  Opacity := Round(255 * (100 - EnsureRange(TransparencyItem.Value, 0.0, 100.0)) / 100);
-  if (Opacity <= 0) or (ScaleItem.Value <= 0) then Exit;
-  Orientation := Ord(OrientationItem.Value = 1);
-  Bounds := MinePhoneBounds(Width, Height, Orientation, XItem.Value, YItem.Value, ScaleItem.Value / 100);
-  if not System.Types.IntersectRect(Clipped, Bounds, Rect(0, 0, Width, Height)) then Exit;
-  JSON := string(DataItem.Value);
-  if not FPrepared or (JSON <> FJSON) or (Orientation <> FOrientation) then
-  begin
-    FRenderer.Prepare(TMineConversation.FromJSON(JSON), Orientation);
-    FJSON := JSON;
-    FOrientation := Orientation;
-    FPrepared := True;
+  Result := 0;
+  if not Assigned(Video^.SetImageData) then Exit;
+  FVideoLock.Acquire;
+  try
+    JSON := string(DataItem.Value);
+    Orientation := Ord(OrientationItem.Value = 1);
+    if not FVideoPrepared or (JSON <> FVideoJSON) or (Orientation <> FOrientation) then
+    begin
+      FVideoPrepared := False;
+      FRenderer.Prepare(TMineConversation.FromJSON(JSON), Orientation);
+      FVideoJSON := JSON;
+      FOrientation := Orientation;
+      FVideoPrepared := True;
+    end;
+    PhoneColor := $FF000000 or (Cardinal(PhoneColorItem.R) shl 16) or
+      (Cardinal(PhoneColorItem.G) shl 8) or PhoneColorItem.B;
+    Image := FRenderer.RenderSurface(Video^.Object_^.Time * 1000, PhoneColor);
+    Width := Image.GetWidth;
+    Height := Image.GetHeight;
+    SetLength(FPixels, Width * Height);
+    // GDI+ の straight BGRA を SDK の straight RGBA に並べ替える。
+    if Image.LockBits(MakeRect(0, 0, Width, Height), ImageLockModeRead,
+      PixelFormat32bppARGB, BitmapData) <> Ok then Exit;
+    try
+      for Y := 0 to Height - 1 do
+      begin
+        Source := PByte(NativeInt(BitmapData.Scan0) + NativeInt(Y) * BitmapData.Stride);
+        Target := @FPixels[Y * Width];
+        for X := 0 to Width - 1 do
+        begin
+          Target^.R := Source[2];
+          Target^.G := Source[1];
+          Target^.B := Source[0];
+          Target^.A := Source[3];
+          Inc(Source, 4);
+          Inc(Target);
+        end;
+      end;
+    finally
+      Image.UnlockBits(BitmapData);
+    end;
+    Video^.SetImageData(@FPixels[0], Width, Height);
+    Result := 1;
+  finally
+    FVideoLock.Release;
   end;
-  PhoneColor := $FF000000 or (Cardinal(PhoneColorItem.R) shl 16) or
-    (Cardinal(PhoneColorItem.G) shl 8) or PhoneColorItem.B;
-  Image := FRenderer.RenderSurface(Bounds, Clipped,
-    EnsureRange(StageItem.Value, 0.0, MINE_MAX_MESSAGES * 100.0), PhoneColor);
-  if Image = nil then Exit;
-  // 合成する現在のオブジェクト画像のみを読む。ホスト画面の取得や保存は行わない。
-  SetLength(FInput, NativeInt(Width) * Height);
-  Video^.GetImageData(@FInput[0]);
-  if Composite(Image, Clipped, Width, Opacity) then
-    Video^.SetImageData(@FInput[0], Width, Height);
+end;
+
+function TMineSession.RenderAudio(Audio: PFILTER_PROC_AUDIO): Byte;
+var
+  Count, Channel, SampleRate: Integer;
+  JSON: string;
+begin
+  Result := 0;
+  if (Audio^.Scene = nil) or not Assigned(Audio^.SetSampleData) then Exit;
+  Count := Audio^.Object_^.SampleNum;
+  SampleRate := Audio^.Scene^.SampleRate;
+  if (Count < 0) or (Count > 16777216) or (SampleRate < 8000) or (SampleRate > 384000) or
+    (Audio^.Object_^.ChannelNum < 1) or (Audio^.Object_^.ChannelNum > 32) then Exit;
+  if Count = 0 then Exit(1);
+  FAudioLock.Acquire;
+  try
+    JSON := string(DataItem.Value);
+    if not FAudioPrepared or (JSON <> FAudioJSON) then
+    begin
+      FAudio.Prepare(TMineConversation.FromJSON(JSON));
+      FAudioJSON := JSON;
+      FAudioPrepared := True;
+    end;
+    if not FAudio.Render(Audio^.Object_^.SampleIndex, Count, SampleRate, VolumeItem.Value, FSamples) then
+    begin
+      SetLength(FSamples, Count);
+      FillChar(FSamples[0], Count * SizeOf(Single), 0);
+    end;
+    for Channel := 0 to Audio^.Object_^.ChannelNum - 1 do
+      Audio^.SetSampleData(@FSamples[0], Channel);
+    Result := 1;
+  finally
+    FAudioLock.Release;
+  end;
 end;
 
 function MineProcVideo(Video: PFILTER_PROC_VIDEO): Byte; cdecl;
-var
-  Session: TMineVideoSession;
 begin
-  Result := 1;
+  Result := 0;
   try
     if (Video = nil) or (Video^.Object_ = nil) or (Video^.UserData = nil) then Exit;
-    Session := TMineVideoSession(Video^.UserData);
-    Session.FLock.Acquire;
-    try
-      Session.Render(Video);
-    finally
-      Session.FLock.Release;
-    end;
+    Result := TMineSession(Video^.UserData).RenderVideo(Video);
   except
-    // 不正な会話や画像で描けないフレームは元の映像を維持する。
+  end;
+end;
+
+function MineProcAudio(Audio: PFILTER_PROC_AUDIO): Byte; cdecl;
+begin
+  Result := 0;
+  try
+    if (Audio = nil) or (Audio^.Object_ = nil) or (Audio^.UserData = nil) then Exit;
+    Result := TMineSession(Audio^.UserData).RenderAudio(Audio);
+  except
   end;
 end;
 
@@ -264,7 +285,7 @@ function MineCreate(EffectID: Int64): Pointer; cdecl;
 begin
   Result := nil;
   try
-    Result := TMineVideoSession.Create;
+    Result := TMineSession.Create;
   except
   end;
 end;
@@ -272,7 +293,7 @@ end;
 procedure MineDestroy(EffectID: Int64; UserData: Pointer); cdecl;
 begin
   try
-    TMineVideoSession(UserData).Free;
+    TMineSession(UserData).Free;
   except
   end;
 end;
@@ -281,20 +302,17 @@ function GetMineFilterTable: PFILTER_PLUGIN_TABLE;
 begin
   if not PluginTableInitialized then
   begin
-    SetupPluginTable(FILTER_FLAG_VIDEO or FILTER_FLAG_FILTER or FILTER_FLAG_USERDATA,
-      EFFECT_NAME, 'SYNC', 'スマホ本体とメッセージの会話を描画', MineProcVideo, nil);
-    AddButton(SettingsButton, '設定', SettingsButtonCallback);
+    SetupPluginTable(FILTER_FLAG_VIDEO or FILTER_FLAG_AUDIO or FILTER_FLAG_INPUT or FILTER_FLAG_USERDATA,
+      EFFECT_NAME, 'SYNC', 'スマホの会話演出と効果音', MineProcVideo, MineProcAudio);
+    AddButton(SettingsButton, '設定', nil);
+    SettingsButton.Callback2 := SettingsButtonCallback;
     OrientationOptions[0].Name := '縦向き';
     OrientationOptions[0].Value := 0;
     OrientationOptions[1].Name := '横向き';
     OrientationOptions[1].Value := 1;
     AddSelect(OrientationItem, 'スマホの方向', 0, @OrientationOptions[0]);
     AddColor(PhoneColorItem, 'スマホの色', $28, $24, $20);
-    AddTrack(StageItem, '段階', 0, 0, MINE_MAX_MESSAGES * 100, 1);
-    AddTrack(XItem, 'X', 0, -4096, 4096, 0.1);
-    AddTrack(YItem, 'Y', 0, -4096, 4096, 0.1);
-    AddTrack(ScaleItem, '拡大率', 100, 0, 1000, 0.1);
-    AddTrack(TransparencyItem, '透明度', 0, 0, 100, 1);
+    AddTrack(VolumeItem, '効果音の音量', MINE_DEFAULT_VOLUME, 0, 100, 1);
     AddGroup(StorageGroup, '内部データ', 0);
     AddString(DataItem, DATA_ITEM_NAME, '{}');
     GetPluginTable^.Func_Create := MineCreate;
